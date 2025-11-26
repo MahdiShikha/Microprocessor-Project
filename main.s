@@ -10,9 +10,7 @@ psect   code, abs
 start:
         call    SPI1_Init
 
-        ; Example 1: mid-scale (~0.5 * Vref) 
 	movlw   0x40
-	;call	SPI1_SendByte
         movwf   DAC_high, A
         movlw   0x40
         movwf   DAC_low, A

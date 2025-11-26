@@ -25,21 +25,22 @@ SPI1_Init:
     bsf    CKE1             ; transmit on active->idle edge
 
     ; SSP1CON1: SSPEN=1, CKP=0, SSPM=0010 (Master Fosc/64)
-    movlw   0x22                 ; WCOL=0,SSPOV=0,SSPEN=1,CKP=0,SSPM=0010
-    movwf   SSP1CON1, A                 ; enable MSSP1 in SPI mode
+    ;movlw   0x22                 ; WCOL=0,SSPOV=0,SSPEN=1,CKP=0,SSPM=0010
+    ;movwf   SSP1CON1, A                 ; enable MSSP1 in SPI mode
 
+    ;for 12bit transfer, different configuration
+    movlw   0x07
+    movwf   SSP1CON1, A
     return
 
 ; ---- Send 1 byte via SPI1 (MSB-first, auto 8 clocks) ----
 SPI1_SendByte:
-    ;bSf	  LATE,0,A
     movwf SSP1BUF, A
 WBF:btfss SSP1STAT, 0, A        ; BF?
     bra   WBF
     movf  SSP1BUF, W, A         ; clear BF
-    ;bcf	  LATE,0,A
     return
-DAC_WriteWord:
+DAC_WriteWord_16bit:
     bcf     LATE, 0, A                  ; CS low (select DAC)
 
     movlw   0x30                        ; command: write & update
@@ -53,4 +54,5 @@ DAC_WriteWord:
 
     bsf     LATE, 0, A                  ; CS high (latch output)
     return
-
+DAC_WriteWORD_12bit:
+    
