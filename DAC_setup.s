@@ -1,6 +1,6 @@
 #include <xc.inc>
     
-    global  SPI1_Init, DAC_WriteWord
+    global  SPI1_Init, DAC_WriteWord_16bit
     global  DAC_high, DAC_low,SPI1_SendByte
     
     psect   udata_acs
@@ -25,12 +25,12 @@ SPI1_Init:
     bsf    CKE1             ; transmit on active->idle edge
 
     ; SSP1CON1: SSPEN=1, CKP=0, SSPM=0010 (Master Fosc/64)
-    ;movlw   0x22                 ; WCOL=0,SSPOV=0,SSPEN=1,CKP=0,SSPM=0010
-    ;movwf   SSP1CON1, A                 ; enable MSSP1 in SPI mode
+    movlw   0x22                 ; WCOL=0,SSPOV=0,SSPEN=1,CKP=0,SSPM=0010
+    movwf   SSP1CON1, A                 ; enable MSSP1 in SPI mode
 
     ;for 12bit transfer, different configuration
-    movlw   0x07
-    movwf   SSP1CON1, A
+    ;movlw   0x07
+    ;movwf   SSP1CON1, A
     return
 
 ; ---- Send 1 byte via SPI1 (MSB-first, auto 8 clocks) ----
