@@ -1,6 +1,6 @@
 #include <xc.inc>
     
-    global  SPI1_Init, DAC_WriteWord_16bit
+    global  SPI1_Init, DAC_WriteWord_16bit,DAC_WriteWord_12bit
     global  DAC_high, DAC_low,SPI1_SendByte
     
     psect   udata_acs
@@ -13,7 +13,7 @@ SPI1_Init:
     bsf	  TRISC, PORTC_SDI1_POSN, A	;RC4 = SDI1
     bcf	  TRISC, PORTC_SDO1_POSN, A     ;RC5 = SDO1
     
-    bcf TRISC, 0, A
+    bcf TRISC, 0, A	;must be set for dac 2 click
     bsf LATC,0,A
     
     bcf	  TRISE, 0, A
@@ -54,5 +54,18 @@ DAC_WriteWord_16bit:
 
     bsf     LATE, 0, A                  ; CS high (latch output)
     return
-DAC_WriteWORD_12bit:
+DAC_WriteWord_12bit:
+    bcf	    LATE, 0 , A
+    
+    
+    movf    DAC_high, W, A
+    andlw   0x0F   
+    iorlw   0x10
+    call    SPI1_SendByte
+
+    movf    DAC_low, W, A
+    call    SPI1_SendByte
+    
+    bsf	    LATE, 0, A
+    return
     
