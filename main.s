@@ -26,7 +26,7 @@ start:
        ; movwf   DAC_low, A
 loop:	;call    DAC_WriteWord_12bit
     
-    
+	call	ADC_Read
 	call	ADC_to_4digits
 	;call	ADC_Read
 	;movf	ADRESH, W, A
@@ -53,6 +53,6 @@ loop:	;call    DAC_WriteWord_12bit
 	movf    DEC0, W, A
 	addlw   '0'
 	call    LCD_Send_Byte_D
-
+	
 
         end 
