@@ -1,148 +1,68 @@
+;========================================================
+;  main.s ? Plant branch:
+;           Vctrl (AN0) -> ADC -> Ak -> ModelPlant -> Yk -> UART
+;========================================================
+
 #include <xc.inc>
 
-extrn	UART_Setup, UART_Transmit_Message  ; external uart subroutines
-extrn	LCD_Setup, LCD_Write_Message, LCD_Write_Hex,LCD_Send_Byte_D ; external LCD subroutines
-extrn	ADC_Setup, ADC_Read		   ; external ADC subroutines
-extrn	Mul16x16,Mul24x8
-extrn	ARG1L,ARG1H,ARG2L,ARG2H
-extrn	X0,X1,X2,Y0
-extrn	RES0,RES1,RES2,RES3	
-extrn	ADC_to_4digits
-extrn	DEC3,DEC2,DEC1,DEC0
-psect	udata_acs   ; reserve data space in access ram
-counter:    ds 1    ; reserve one byte for a counter variable
-delay_count:ds 1    ; reserve one byte for counter in the delay routine
-    
-psect	udata_bank4 ; reserve data anywhere in RAM (here at 0x400)
-myArray:    ds 0x80 ; reserve 128 bytes for message data
+    ; external routines from other modules
+    extrn   Init_Model
+    extrn   ModelPlant
 
+    extrn   AkL, AkH
+    extrn   YkL, YkH
 
-psect	data    
-	; ******* myTable, data in programme memory, and its length *****
-myTable:
-	db	'H','e','l','l','o',' ','W','o','r','l','d','!',0x0a
-					; message, plus carriage return
-	myTable_l   EQU	13	; length of data
-	align	2
-    
-psect	code, abs	
-rst: 	org 0x0
- 	goto	setup
+    extrn   ADC_Setup
+    extrn   ADC_Read
 
-	; ******* Programme FLASH read Setup Code ***********************
-setup:	bcf	CFGS	; point to Flash program memory  
-	bsf	EEPGD 	; access Flash program memory
-	call	UART_Setup	; setup UART
-	call	LCD_Setup	; setup UART
-	call	ADC_Setup	; setup ADC
-	goto	start
-	
-	; ******* Main programme ****************************************
-start: 	lfsr	0, myArray	; Load FSR0 with address in RAM	
-	movlw	low highword(myTable)	; address of data in PM
-	movwf	TBLPTRU, A		; load upper bits to TBLPTRU
-	movlw	high(myTable)	; address of data in PM
-	movwf	TBLPTRH, A		; load high byte to TBLPTRH
-	movlw	low(myTable)	; address of data in PM
-	movwf	TBLPTRL, A		; load low byte to TBLPTRL
-	movlw	myTable_l	; bytes to read
-	movwf 	counter, A		; our counter register
-loop: 	tblrd*+			; one byte from PM to TABLAT, increment TBLPRT
-	movff	TABLAT, POSTINC0; move data from TABLAT to (FSR0), inc FSR0	
-	decfsz	counter, A		; count down to zero
-	bra	loop		; keep going until finished
-		
-	movlw	myTable_l	; output message to UART
-	lfsr	2, myArray
-	call	UART_Transmit_Message
+    extrn   UART_Setup
+    extrn   UART_Transmit_Byte
 
-	movlw	myTable_l-1	; output message to LCD
-				; don't send the final carriage return to LCD
-	lfsr	2, myArray
-	;call	LCD_Write_Message
-;Test_Mul16x16:
-;	movlw	0xD2
-;	movwf	ARG1L, A
-;	movlw	0x04
-;	movwf	ARG1H, A
-;	
-;	movlw	0x8A
-;	movwf	ARG2L, A
-;	movlw	0x41
-;	movwf	ARG2H, A
-;	
-;	call	Mul16x16
-;	movf	RES3, W, A
-;	call	LCD_Write_Hex
-;	movf	RES2, W, A
-;	call	LCD_Write_Hex
-;	movf	RES1, W, A
-;	call	LCD_Write_Hex
-;	movf	RES0, W, A
-;	call	LCD_Write_Hex
-;	call	delay
-;Test_Mul24x8:
-;	movlw	0x34
-;	movwf	X0, A
-;	movlw	0xEB
-;	movwf	X1, A
-;	movlw	0x3B
-;	movwf	X2, A
-	
-;	movlw	0x0A
-;	movwf	Y0,A
-;	
-;	call	Mul24x8
-;	movf	RES3, W, A
-;	call	LCD_Write_Hex
-;	movf	RES2, W, A
-;	call	LCD_Write_Hex
-;	movf	RES1, W, A
-;	call	LCD_Write_Hex
-;	movf	RES0, W, A
-;	call	LCD_Write_Hex
-;	call	delay
-measure_loop:
-	call    ADC_Read          ; ADRESH:ADRESL now contain 12-bit code
+    psect   code, abs
+rst:    org 0x0000
+        goto    setup
 
-	call    ADC_to_4digits    ; fills DEC3..DEC0 with digits 0..9
+;--------------------------------------------------------
+; setup: initialise model, ADC and UART
+;--------------------------------------------------------
+setup:
+        ; world model (alpha, drift, noise, etc.)
+        call    Init_Model
 
-    ; Convert digits to ASCII and print: "d3 d2 d1 d0"
-    ; (just as 4 chars; you can insert a decimal point later, e.g. d3 '.' d2 d1 d0)
+        ; on-chip ADC (AN0 = Vctrl)
+        call    ADC_Setup
 
-    ; thousands
-	movf    DEC3, W, A
-	addlw   '0'
-	call    LCD_Send_Byte_D
+        ; UART for sending Yk over TX1/RC6
+        call    UART_Setup
 
-    ; hundreds
-	movf    DEC2, W, A
-	addlw   '0'
-	call    LCD_Send_Byte_D
+        goto    MainLoop
 
-    ; tens
-	movf    DEC1, W, A
-	addlw   '0'
-	call    LCD_Send_Byte_D
+;--------------------------------------------------------
+; MainLoop:
+;   1) Convert Vctrl on AN0 -> ADRESH:ADRESL
+;   2) Copy ADC result to AkH:AkL (12-bit right justified)
+;   3) Call ModelPlant to compute YkH:YkL
+;   4) Send YkH and YkL over UART
+;--------------------------------------------------------
+MainLoop:
+        ; 1) ADC conversion
+        call    ADC_Read           ; blocking until conversion completes
 
-    ; ones
-	movf    DEC0, W, A
-	addlw   '0'
-	call    LCD_Send_Byte_D
+        ; 2) Copy 12-bit ADC result to Ak
+        ;    ADRESL -> AkL, ADRESH -> AkH
+        movff   ADRESL, AkL
+        movff   ADRESH, AkH
 
-    ; maybe move cursor back or clear, then loop
-	goto    measure_loop
-;measure_loop:
-;	call	ADC_Read
-;	movf	ADRESH, W, A
-;	call	LCD_Write_Hex
-;	movf	ADRESL, W, A
-;	call	LCD_Write_Hex
-;	goto	measure_loop		; goto current line in code
-	
-	; a delay subroutine if you need one, times around loop in delay_count
-delay:	decfsz	delay_count, A	; decrement until zero
-	bra	delay
-	return
+        ; 3) One world-model step: Ak -> Yk
+        call    ModelPlant
 
-	end	rst
+        ; 4) Transmit Yk over UART: high byte first, then low byte
+        movf    YkH, W, A
+        call    UART_Transmit_Byte
+
+        movf    YkL, W, A
+        call    UART_Transmit_Byte
+
+        bra     MainLoop           ; repeat forever
+
+        end     rst
