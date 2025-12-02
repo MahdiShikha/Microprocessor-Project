@@ -1,14 +1,11 @@
 #include <xc.inc>
-extrn   SPI1_Init, DAC_WriteWord_16bit,SPI1_SendByte,DAC_WriteWord_12bit
-extrn	LCD_Setup, LCD_Write_Message, LCD_Write_Hex,LCD_Send_Byte_D ; external LCD subroutines
-extrn	ADC_Setup, ADC_Read		   ; external ADC subroutines
-extrn	Mul16x16,Mul24x8
-extrn	ARG1L,ARG1H,ARG2L,ARG2H
-extrn	X0,X1,X2,Y0
-extrn	RES0,RES1,RES2,RES3	
-extrn	ADC_to_4digits
-extrn	DEC3,DEC2,DEC1,DEC0
+extrn   SPI1_Init, DAC_WriteWord_16bit,SPI1_SendByte
 extrn   DAC_high, DAC_low
+extrn	Twelve_bit_to_ten_bit
+extrn	LCD_Setup, LCD_Write_Message, LCD_Write_Hex,LCD_Send_Byte_D ; external LCD subroutines
+extrn	UART2_Setup, UART2_Receive_12bit
+extrn	UART_Setup, UART_Transmit_Byte
+extrn	DEC3,DEC2,DEC1,DEC0
 
 psect   code, abs
         org 0x0000
@@ -16,43 +13,53 @@ psect   code, abs
 
         org 0x0100
 start:
-        ;call    SPI1_Init
-	call	LCD_Setup	; setup LCD
-	call	ADC_Setup	; setup ADC
+        call    SPI1_Init
+	call	LCD_Setup
+	call	UART2_Setup
+	call	UART_Setup
 
-	movlw   0x02	;first 4 bits are overwritten by config bits for 12bit send
-        ;movwf   DAC_high, A
+        
+	movlw   0xFF
+        movwf   DAC_high, A
         movlw   0xFF
-       ; movwf   DAC_low, A
-loop:	;call    DAC_WriteWord_12bit
-    
-	call	ADC_Read
-	call	ADC_to_4digits
-	;call	ADC_Read
-	;movf	ADRESH, W, A
-	;call	LCD_Write_Hex
-	;movf	ADRESL, W, A
-	;call	LCD_Write_Hex
+        movwf   DAC_low, A
+loop:	
+	movf	DAC_high, W, A
+	call	UART_Transmit_Byte  ;loop debugging, send DAC high and low through RC6
+				    ;and check the input in RG2
 	
-    ; thousands
+	movf	DAC_low, W, A
+	call	UART_Transmit_Byte
+	
+        call    UART2_Receive_12bit ;12bits stored in UART2_H and UART2_L
+	
+	
+	call	Twelve_bit_to_ten_bit
+	
+	; thousands
 	movf    DEC3, W, A
 	addlw   '0'
 	call    LCD_Send_Byte_D
 
-    ; hundreds
+	; hundreds
 	movf    DEC2, W, A
 	addlw   '0'
 	call    LCD_Send_Byte_D
 
-    ; tens
+	; tens
 	movf    DEC1, W, A
 	addlw   '0'
 	call    LCD_Send_Byte_D
 
-    ; ones
+	; ones
 	movf    DEC0, W, A
 	addlw   '0'
 	call    LCD_Send_Byte_D
-	
+
+    
+	;call    DAC_WriteWord_16bit
+    
+
+        bra    loop
 
         end 

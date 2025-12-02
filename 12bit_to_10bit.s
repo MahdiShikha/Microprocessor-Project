@@ -4,8 +4,9 @@ extrn  Mul16x16, Mul24x8
 extrn  ARG1L,ARG1H,ARG2L,ARG2H
 extrn  X0,X1,X2,Y0
 extrn  RES0,RES1,RES2,RES3
+extrn  UART2_H, UART2_L
 
-global ADC_to_4digits
+global Twelve_bit_to_ten_bit
 global DEC3,DEC2,DEC1,DEC0
 
 psect udata_acs
@@ -24,14 +25,14 @@ psect adc_conv_code, class=CODE
 ;   Step 1: N * 0x418A  (16×16) ? first digit + 24-bit remainder
 ;   Step 2?4: remainder * 10    (24×8) ? next digits
 ; ----------------------------------------------
-ADC_to_4digits:
+Twelve_bit_to_ten_bit:
 
     ; -----------------------------
     ; Step 1: 16×16: N * 0x418A
     ; -----------------------------
     ; ARG1 = N (ADC result)
-    movff   ADRESL, ARG1L
-    movff   ADRESH, ARG1H
+    movff   UART2_L, ARG1L
+    movff   UART2_H, ARG1H
 
     ; ARG2 = 0x418A (k = 2^24 / 1000)
     movlw   0x8A
