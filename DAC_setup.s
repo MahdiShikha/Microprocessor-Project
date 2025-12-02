@@ -1,4 +1,8 @@
 #include <xc.inc>
+    ;16BIT DAC Sends a 24bit SPI frame
+    ;4 command bits
+    ;4 dont care bits
+    ; 16 data bits D15,... D0
     
     global  SPI1_Init, DAC_WriteWord
     global  DAC_high, DAC_low,SPI1_SendByte
