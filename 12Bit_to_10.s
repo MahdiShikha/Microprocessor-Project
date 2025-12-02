@@ -4,6 +4,7 @@ extrn  Mul16x16, Mul24x8
 extrn  ARG1L,ARG1H,ARG2L,ARG2H
 extrn  X0,X1,X2,Y0
 extrn  RES0,RES1,RES2,RES3
+extrn  YkL, YkH
 
 global ADC_to_4digits
 global DEC3,DEC2,DEC1,DEC0
@@ -30,8 +31,8 @@ ADC_to_4digits:
     ; Step 1: 16×16: N * 0x418A
     ; -----------------------------
     ; ARG1 = N (ADC result)
-    movff   ADRESL, ARG1L
-    movff   ADRESH, ARG1H
+    movff   YkL, ARG1L
+    movff   YkH, ARG1H
 
     ; ARG2 = 0x418A (k = 2^24 / 1000)
     movlw   0x8A

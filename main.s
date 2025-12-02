@@ -17,6 +17,11 @@
 
     extrn   UART_Setup
     extrn   UART_Transmit_Byte
+    
+    extrn   LCD_Setup	
+    extrn   LCD_Send_Byte_D
+    extrn   ADC_to_4digits
+    extrn   DEC3,DEC2,DEC1,DEC0
 
     psect   code, abs
 rst:    org 0x0000
@@ -34,6 +39,8 @@ setup:
 
         ; UART for sending Yk over TX1/RC6
         call    UART_Setup
+	
+	call	LCD_Setup
 
         goto    MainLoop
 
@@ -62,6 +69,27 @@ MainLoop:
 
         movf    YkL, W, A
         call    UART_Transmit_Byte
+	
+	call	ADC_to_4digits
+	 ; thousands
+	movf    DEC3, W, A
+	addlw   '0'
+	call    LCD_Send_Byte_D
+
+	; hundreds
+	movf    DEC2, W, A
+	addlw   '0'
+	call    LCD_Send_Byte_D
+
+	; tens
+	movf    DEC1, W, A
+	addlw   '0'
+	call    LCD_Send_Byte_D
+
+	; ones
+	movf    DEC0, W, A
+	addlw   '0'
+	call    LCD_Send_Byte_D 
 
         bra     MainLoop           ; repeat forever
 
