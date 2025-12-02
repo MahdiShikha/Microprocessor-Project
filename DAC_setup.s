@@ -13,9 +13,9 @@
     ; ---- SPI1 init: CKP=1, CKE=0, Master Fosc/64 ----
     psect dac_code,  class=CODE
 SPI1_Init:
-    bcf	  TRISC, PORTC_SCK1_POSN, A	;RC3 = SCK1       
-    bsf	  TRISC, PORTC_SDI1_POSN, A	;RC4 = SDI1
-    bcf	  TRISC, PORTC_SDO1_POSN, A     ;RC5 = SDO1
+    bcf	  TRISC, PORTC_SCK1_POSN, A	;RC3 = SCK1 (output, clock used for tickrate)      
+    bsf	  TRISC, PORTC_SDI1_POSN, A	;RC4 = SDI1 (input, not important for dac)
+    bcf	  TRISC, PORTC_SDO1_POSN, A     ;RC5 = SDO1 (output, data in serial format)
     
     bcf TRISC, 0, A
     bsf LATC,0,A

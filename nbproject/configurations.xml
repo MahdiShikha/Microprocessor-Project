@@ -25,6 +25,10 @@
       <itemPath>DAC_setup.s</itemPath>
       <itemPath>LCD.s</itemPath>
       <itemPath>Mul.s</itemPath>
+      <itemPath>modelplant.s</itemPath>
+      <itemPath>ADC.s</itemPath>
+      <itemPath>FP_LUT.inc</itemPath>
+      <itemPath>12Bit_to_10.s</itemPath>
     </logicalFolder>
   </logicalFolder>
   <sourceRootList>
@@ -73,6 +77,8 @@
         <makeCustomizationEnableLongLines>false</makeCustomizationEnableLongLines>
         <makeCustomizationNormalizeHexFile>false</makeCustomizationNormalizeHexFile>
       </makeCustomizationType>
+      <item path="12Bit_to_10.s" ex="true" overriding="false">
+      </item>
       <item path="12bit_to_10bit.s" ex="true" overriding="false">
         <pic-as-assembler>
         </pic-as-assembler>
@@ -80,6 +86,8 @@
         </pic-as-global>
         <pic-as-linker>
         </pic-as-linker>
+      </item>
+      <item path="ADC.s" ex="true" overriding="false">
       </item>
       <item path="ADC_setup.s" ex="true" overriding="false">
         <pic-as-assembler>
@@ -89,7 +97,9 @@
         <pic-as-linker>
         </pic-as-linker>
       </item>
-      <item path="LCD.s" ex="true" overriding="false">
+      <item path="FP_LUT.inc" ex="true" overriding="false">
+      </item>
+      <item path="LCD.s" ex="false" overriding="false">
         <pic-as-assembler>
         </pic-as-assembler>
         <pic-as-global>
@@ -97,7 +107,7 @@
         <pic-as-linker>
         </pic-as-linker>
       </item>
-      <item path="Mul.s" ex="true" overriding="false">
+      <item path="Mul.s" ex="false" overriding="false">
         <pic-as-assembler>
         </pic-as-assembler>
         <pic-as-global>
@@ -1126,6 +1136,8 @@
         </pic-as-global>
         <pic-as-linker>
         </pic-as-linker>
+      </item>
+      <item path="modelplant.s" ex="true" overriding="false">
       </item>
       <pic-as-assembler>
         <property key="fmax-errors" value="20"/>
