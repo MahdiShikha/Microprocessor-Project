@@ -4,7 +4,7 @@ extrn  Mul16x16, Mul24x8
 extrn  ARG1L,ARG1H,ARG2L,ARG2H
 extrn  X0,X1,X2,Y0
 extrn  RES0,RES1,RES2,RES3
-extrn  UART2_H, UART2_L
+extrn  UART1_H, UART1_L
 
 global Twelve_bit_to_ten_bit
 global DEC3,DEC2,DEC1,DEC0
@@ -31,8 +31,8 @@ Twelve_bit_to_ten_bit:
     ; Step 1: 16×16: N * 0x418A
     ; -----------------------------
     ; ARG1 = N (ADC result)
-    movff   UART2_L, ARG1L
-    movff   UART2_H, ARG1H
+    movff   UART1_L, ARG1L
+    movff   UART1_H, ARG1H
 
     ; ARG2 = 0x418A (k = 2^24 / 1000)
     movlw   0x8A
