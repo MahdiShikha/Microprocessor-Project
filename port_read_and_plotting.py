@@ -11,6 +11,7 @@ Decode them into a value
 Append to a Python list (for plotting)
 Write the same value as a row into the CSV
 Update the plot every few samples
+Stops after a set amount of samples have been read or a keyboard interrupt
 """
 import csv
 import time
@@ -19,6 +20,7 @@ import matplotlib.pyplot as plt
 
 PORT = "COM4"
 BAUD = 9600
+NUM_SAMPLES = 10000
 
 def main():
     # --- Ask for filename ---
@@ -28,8 +30,8 @@ def main():
     filename = base + ".csv"
 
     # --- Open serial ---
-    ser = serial.Serial(PORT, BAUD, timeout=1)
-    ser.reset_input_buffer()
+    ser = serial.Serial(PORT, BAUD, timeout=TIMEOUT)
+    ser.reset_input_buffer() # possible comment
 
     # --- Prepare CSV ---
     f = open(filename, "w", newline="")
@@ -37,7 +39,7 @@ def main():
     writer.writerow(["sample", "timestamp_s", "value_12bit"])
 
     # --- Prepare plot ---
-    plt.ion()
+    plt.ion()   #interactive mode
     fig, ax = plt.subplots()
     line, = ax.plot([], [], marker=".")
     ax.set_xlabel("Sample index")
@@ -52,7 +54,7 @@ def main():
     print("Logging + plotting. Press Ctrl+C to stop.")
 
     try:
-        while True:
+        while sample_idx < NUM_SAMPLES:
             # read 2 bytes = 12-bit value, high then low
             frame = ser.read(2)
             if len(frame) < 2:
