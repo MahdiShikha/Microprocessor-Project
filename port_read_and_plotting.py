@@ -17,10 +17,19 @@ import csv
 import time
 import serial
 import matplotlib.pyplot as plt
+from serial.tools import list_ports
+
 
 PORT = "COM4"
 BAUD = 9600
 NUM_SAMPLES = 10000
+
+def list_serial_ports():
+    ports = list_ports.comports()
+    print("Available serial ports:")
+    for port in ports:
+        print(f"{port.device}: {port.description}")
+        # p.device is like "COM4" on Windows, "/dev/ttyUSB0" on Linux, etc.
 
 def main():
     # --- Ask for filename ---
@@ -30,7 +39,7 @@ def main():
     filename = base + ".csv"
 
     # --- Open serial ---
-    ser = serial.Serial(PORT, BAUD, timeout=TIMEOUT)
+    ser = serial.Serial(PORT, BAUD, timeout=10.0)
     ser.reset_input_buffer() # possible comment
 
     # --- Prepare CSV ---
@@ -90,4 +99,5 @@ def main():
         plt.show()  # keep final plot on screen
 
 if __name__ == "__main__":
+    list_serial_ports()
     main()
