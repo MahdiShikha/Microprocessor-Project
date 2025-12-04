@@ -49,7 +49,11 @@ def main():
                 t = time.time()
 
                 writer.writerow([index, t, hi, lo, value])
-                print(f"{index:6d}: 0x{hi:02X} 0x{lo:02X} -> {value:5d}")
+                print(f"{index:6d}: 0x{hi:02X} 0x{lo:02X} -> {value:5d}")   
+                #index - base 10
+                #hi    - hex
+                #lo    - hex
+                #value - base 10
 
                 index += 1
 
