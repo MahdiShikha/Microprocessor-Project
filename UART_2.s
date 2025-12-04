@@ -1,80 +1,78 @@
 #include <xc.inc>
 
-global  UART1_Setup
-global  UART1_Receive_Byte, UART1_Receive_12bit
-global  UART1_H, UART1_L
+global  UART2_Setup
+global  UART2_Receive_Byte, UART2_Receive_12bit
+global  UART2_H, UART2_L
 
 ; ---------------- RAM ----------------
 psect   udata_acs
-UART1_H:    ds 1          ; high byte received from UART1
-UART1_L:    ds 1          ; low  byte received from UART1
+UART2_H:    ds 1          ; high byte received from UART2
+UART2_L:    ds 1          ; low  byte received from UART2
 
 ; ---------------- CODE ----------------
-psect   uart1_code, class=CODE
+psect   uart2_code, class=CODE
 
 ;--------------------------------------
-; UART1_Setup  (9600 baud, async, 8N1, polling RX)
+; UART2_Setup  (9600 baud, async, 8N1, polling RX)
+;  Configure EUSART2 to match the working UART1 settings:
+;    SPBRGH1 = 0x00
+;    SPBRG1  = 0x67
+;    BAUDCON1 = 0x40
+;    TXSTA1  = 0x22
+;    RCSTA1  = 0x90
 ;--------------------------------------
-UART1_Setup:
-    ; 0) Make sure RC7 is input (RX1)
-    ;    For EUSARTs Microchip recommend TRIS=1 even for TX,
-    ;    the peripheral then drives the pin.
-    bsf     TRISC, PORTC_RX1_POSN, A   ; RC7 = RX1 (input)
+UART2_Setup:
+    clrf    SPBRGH2,A
+    clrf    SPBRG2, A
+    clrf    BAUDCON2, A
+    clrf    RCSTA2, A
+    
+    ; 0) Make RG2 the RX2 input pin
+    bsf     TRISG, PORTG_RX2_POSN, A   ; RG2 = RX2 (input)
 
-    ; 2) Baud rate generator for 9600 baud @ 64 MHz:
-    ;    SPBRG1 = 103, BRGH = 0, BRG16 = 0  -> low-speed, 8-bit BRG
-    clrf    SPBRGH1, A                 ; high byte = 0
+    ; 1) Baud-rate generator: SPBRGH2:SPBRG2 = 0x00:0x67
+    clrf    SPBRGH2, A                 ; SPBRGH2 = 0x00
     movlw   103
-    movwf   SPBRG1, A                  ; low byte
+    movwf   SPBRG2, A                  ; SPBRG2  = 0x67
 
-    bcf     BRG16                      ; 8-bit BRG
-    bcf     BRGH                       ; low speed (÷64)
+    ; 2) BAUDCON2 = 0x40 (same as BAUDCON1)
+    movlw   0x40                       ; 0100 0000
+    movwf   BAUDCON2, A                ; BRG16=0, WUE=0, RCIDL=1
 
-    ; 3) Async mode:
-    bcf     SYNC                       ; asynchronous mode
+    ; 3) TXSTA2 = 0x22 (same as TXSTA1)
+    ;movlw   0x22                       ; 0010 0010
+    ;movwf   TXSTA2, A                  ; async, BRGH=0, TXEN=1
 
-    ; 4) Enable serial port and receiver:
-    bsf     SPEN                       ; enable EUSART1, RC6/RC7 become TX1/RX1
-    bsf     CREN                       ; continuous receive enable
-
-    ; (TX not needed right now, so TXEN left clear)
-
-    ; 5) Optionally clear any junk in the FIFO and RC1IF
-    ;movf    RCREG1, W, A              ; dummy reads
-    ;movf    RCREG1, W, A
-    ;
-    ; If an overrun somehow happened, clear it:
-    ;btfsc   OERR                       ; overrun error?
-    ;bcf     CREN                       ; clear CREN to reset receiver
-    ;bsf     CREN
+    ; 4) RCSTA2 = 0x90 (same as RCSTA1)
+    movlw   0x90                       ; 1001 0000
+    movwf   RCSTA2, A                  ; SPEN=1, CREN=1, 8-bit, no addr detect
 
     return
 
 ;--------------------------------------
-; UART1_Receive_Byte
-;   Blocks until one byte is received on UART1.
+; UART2_Receive_Byte
+;   Blocks until one byte is received on UART2.
 ;   Returns the byte in W.
 ;--------------------------------------
-UART1_Receive_Byte:
-RX1_wait:
-    btfss   RC1IF                      ; PIR1.RC1IF = 1 when RCREG1 has a byte
-    bra     RX1_wait
-    movf    RCREG1, W, A               ; read byte ? W, clears RC1IF
+UART2_Receive_Byte:
+RX2_wait:
+    btfss   RC2IF                      ; PIR3.RC2IF = 1 when RCREG2 has a byte
+    bra     RX2_wait
+    movf    RCREG2, W, A               ; read byte -> W, clears RC2IF
     return
 
 ;--------------------------------------
-; UART1_Receive_12bit
+; UART2_Receive_12bit
 ;   Waits for two bytes and stores them:
-;   UART1_H = first byte  (MSB)
-;   UART1_L = second byte (LSB)
-;   (second byte currently commented, as in your UART2 version)
+;   UART2_H = first byte  (MSB)
+;   UART2_L = second byte (LSB)
 ;--------------------------------------
-UART1_Receive_12bit:
-    call    UART1_Receive_Byte
-    movwf   UART1_H, A
+UART2_Receive_12bit:
+    call    UART2_Receive_Byte
+    movwf   UART2_H, A
 
-    call    UART1_Receive_Byte
-    movwf   UART1_L, A
+    call    UART2_Receive_Byte
+    movwf   UART2_L, A
 
     return
 

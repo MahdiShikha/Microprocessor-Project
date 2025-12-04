@@ -24,6 +24,7 @@
       <itemPath>DAC_setup.s</itemPath>
       <itemPath>LCD.s</itemPath>
       <itemPath>Mul.s</itemPath>
+      <itemPath>UART_1.s</itemPath>
       <itemPath>UART_2.s</itemPath>
     </logicalFolder>
   </logicalFolder>

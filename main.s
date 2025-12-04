@@ -3,9 +3,11 @@ extrn   SPI1_Init, DAC_WriteWord_16bit,SPI1_SendByte
 extrn   DAC_high, DAC_low
 extrn	Twelve_bit_to_ten_bit
 extrn	LCD_Setup, LCD_Write_Message, LCD_Write_Hex,LCD_Send_Byte_D ; external LCD subroutines
+extrn	UART2_Setup, UART2_Receive_12bit
 extrn	UART1_Setup, UART1_Receive_12bit
 extrn	UART_Setup, UART_Transmit_Byte
 extrn	DEC3,DEC2,DEC1,DEC0
+extrn	UART1_H, UART1_L
 
 psect   code, abs
         org 0x0000
@@ -15,6 +17,7 @@ psect   code, abs
 start:
         ;call    SPI1_Init
 	call	LCD_Setup
+	;call	UART2_Setup
 	call	UART1_Setup
 	call	UART_Setup
 
@@ -31,10 +34,15 @@ loop:
 	;movf	DAC_low, W, A
 	;call	UART_Transmit_Byte
 	
-        call    UART1_Receive_12bit ;12bits stored in UART2_H and UART2_L
+        ;call    UART2_Receive_12bit ;12bits stored in UART2_H and UART2_L
+	call	UART1_Receive_12bit
 	
 	
 	call	Twelve_bit_to_ten_bit
+	
+	movf	UART1_H, W, A
+	movf	UART1_L, W, A
+	call	UART_Transmit_Byte
 	
 	; thousands
 	movf    DEC3, W, A
