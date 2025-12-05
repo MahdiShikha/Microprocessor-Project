@@ -21,3 +21,4 @@ funclist
 nbproject/Makefile-*
 disassembly/
 *.map
+.csv
