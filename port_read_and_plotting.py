@@ -69,9 +69,9 @@ def main():
             if len(frame) < 2:
                 continue  # timeout / incomplete frame, skip
 
-            high, low = frame[0], frame[1]
-            raw_16 = (high << 8) | low  # 0–65535; mask if needed
-            value = (raw_16 >> 4) & 0x0FFF
+            high, low = frame[0] & 0x0F, frame[1]
+            value = (high << 8) | low  # 0–65535; mask if needed
+            #value = (raw_16 >> 4) & 0x0FFF
 
             ts = time.time() - t0
             sample_idx += 1
@@ -82,7 +82,7 @@ def main():
 
             # write to CSV
             writer.writerow([sample_idx, f"{ts:.6f}", value])
-
+        
             # update plot every N samples (e.g. every 10)
             if sample_idx % 10 == 0:
                 line.set_data(xs, ys)

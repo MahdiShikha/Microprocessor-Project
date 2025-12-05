@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
-df = pd.read_csv("test2.csv",usecols=[0,2])
+df = pd.read_csv("test5.csv",usecols=[0,2])
 print(df)
 
 xs = df["sample"].to_numpy()

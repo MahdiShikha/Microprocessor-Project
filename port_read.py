@@ -8,7 +8,7 @@ import csv
 
 PORT = "COM4"          # your USB-UART port
 BAUD = 9600            # must match PIC (SPBRG1 = 103)
-NUM_SAMPLES = 100000    # samples to read (each = 2 bytes: high, low)
+NUM_SAMPLES = 10000    # samples to read (each = 2 bytes: high, low)
 
 
 def main():
