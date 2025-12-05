@@ -21,8 +21,8 @@ from serial.tools import list_ports
 
 
 PORT = "COM4"
-BAUD = 9600
-NUM_SAMPLES = 10000
+BAUD = 9615
+NUM_SAMPLES = 100000
 
 def list_serial_ports():
     ports = list_ports.comports()
@@ -70,7 +70,8 @@ def main():
                 continue  # timeout / incomplete frame, skip
 
             high, low = frame[0], frame[1]
-            value = (high << 8) | low  # 0–65535; mask if needed
+            raw_16 = (high << 8) | low  # 0–65535; mask if needed
+            value = (raw_16 >> 4) & 0x0FFF
 
             ts = time.time() - t0
             sample_idx += 1
