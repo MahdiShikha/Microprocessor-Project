@@ -21,7 +21,7 @@ from serial.tools import list_ports
 
 
 PORT = "COM4"
-BAUD = 9615
+BAUD = 9600
 NUM_SAMPLES = 100000
 
 def list_serial_ports():
@@ -64,6 +64,16 @@ def main():
 
     try:
         while sample_idx < NUM_SAMPLES:
+            prev = None
+            while True:
+                b = ser.read(1)
+                if len(b) == 0 :
+                    continue
+                byte = b[0]
+                if prev == 0xFF and byte == 0xFF:
+                    break
+
+                prev = byte
             # read 2 bytes = 12-bit value, high then low
             frame = ser.read(2)
             if len(frame) < 2:

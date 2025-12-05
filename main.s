@@ -64,6 +64,12 @@ MainLoop:
         call    ModelPlant
 
         ; 4) Transmit Yk over UART: high byte first, then low byte
+	;Header
+	movlw	0xFF
+	call	UART_Transmit_Byte
+	movlw	0xFF
+	call	UART_Transmit_Byte
+	
         movf    YkH, W, A
         call    UART_Transmit_Byte
 
