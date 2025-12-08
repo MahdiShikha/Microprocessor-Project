@@ -12,6 +12,9 @@ Append to a Python list (for plotting)
 Write the same value as a row into the CSV
 Update the plot every few samples
 Stops after a set amount of samples have been read or a keyboard interrupt
+
+Frame format (7 bytes in total):
+[0xFF][0xFF][MODE][D_ctrl_H][D_ctrl_L][YkH][YkL]
 """
 import csv
 import time
@@ -21,7 +24,7 @@ from serial.tools import list_ports
 
 
 PORT = "COM4"
-BAUD = 9600
+BAUD = 115200
 NUM_SAMPLES = 100000
 
 def list_serial_ports():
@@ -40,65 +43,86 @@ def main():
 
     # --- Open serial ---
     ser = serial.Serial(PORT, BAUD, timeout=10.0)
-    ser.reset_input_buffer() # possible comment
+    ser.reset_input_buffer()  # flush any old junk
 
     # --- Prepare CSV ---
     f = open(filename, "w", newline="")
     writer = csv.writer(f)
-    writer.writerow(["sample", "timestamp_s", "value_12bit"])
+    writer.writerow(["sample", "timestamp_s", "mode", "D_ctrl_12bit", "Yk_12bit"])
 
-    # --- Prepare plot ---
-    plt.ion()   #interactive mode
+    # --- Prepare plot (plotting Yk and D_ctrl vs sample index) ---
+    plt.ion()
     fig, ax = plt.subplots()
-    line, = ax.plot([], [], marker=".")
+    line_Yk,   = ax.plot([], [], marker=".", linestyle="-", label="Yk")
+    line_Dctr, = ax.plot([], [], marker=".", linestyle="--", label="D_ctrl")
     ax.set_xlabel("Sample index")
     ax.set_ylabel("Value (12-bit)")
     ax.set_title("Live UART data")
+    ax.legend()
+
 
     xs = []
-    ys = []
+    ys_Yk = []          # store Yk for plotting
+    ys_Dctrl = []       # store D_ctrl for plotting
     sample_idx = 0
     t0 = time.time()
 
     print("Logging + plotting. Press Ctrl+C to stop.")
+    print("Expecting frames: 0xFF 0xFF MODE D_H D_L Y_H Y_L")
 
     try:
         while sample_idx < NUM_SAMPLES:
+
+            # --- 1) Find 2-byte header 0xFF 0xFF --- 
+            #sliding window method
             prev = None
             while True:
                 b = ser.read(1)
-                if len(b) == 0 :
+                if len(b) == 0:
+                    # timeout, keep trying
                     continue
+
                 byte = b[0]
                 if prev == 0xFF and byte == 0xFF:
+                    # Found header
                     break
 
                 prev = byte
-            # read 2 bytes = 12-bit value, high then low
-            frame = ser.read(2)
-            if len(frame) < 2:
-                continue  # timeout / incomplete frame, skip
 
-            high, low = frame[0] & 0x0F, frame[1]
-            value = (high << 8) | low  # 0–65535; mask if needed
-            #value = (raw_16 >> 4) & 0x0FFF
+            # --- 2) Read the rest of the frame: MODE, D_H, D_L, Y_H, Y_L ---
+            frame = ser.read(5)
+            if len(frame) < 5:
+                # incomplete frame (timeout), restart header search
+                continue
+
+            mode      = frame[0]
+            D_ctrl_H  = frame[1]
+            D_ctrl_L  = frame[2]
+            YkH       = frame[3]
+            YkL       = frame[4]
+
+            # 12-bit combine (upper nibble from *_H)
+            D_ctrl = ((D_ctrl_H & 0x0F) << 8) | D_ctrl_L
+            Yk     = ((YkH      & 0x0F) << 8) | YkL
 
             ts = time.time() - t0
             sample_idx += 1
 
-            # store for plot
+            # store for plot (Yk)
             xs.append(sample_idx)
-            ys.append(value)
+            ys_Yk.append(Yk)
+            ys_Dctrl.append(D_ctrl)
 
             # write to CSV
-            writer.writerow([sample_idx, f"{ts:.6f}", value])
-        
+            writer.writerow([sample_idx, f"{ts:.6f}", mode, D_ctrl, Yk])
+
             # update plot every N samples (e.g. every 10)
             if sample_idx % 10 == 0:
-                line.set_data(xs, ys)
+                line_Yk.set_data(xs, ys_Yk)
+                line_Dctr.set_data(xs, ys_Dctrl)
                 ax.relim()
                 ax.autoscale_view()
-                plt.pause(0.001)  # let GUI update
+                plt.pause(0.001)
 
     except KeyboardInterrupt:
         print("\nStopping logging.")
@@ -108,6 +132,7 @@ def main():
         ser.close()
         plt.ioff()
         plt.show()  # keep final plot on screen
+
 
 if __name__ == "__main__":
     list_serial_ports()
