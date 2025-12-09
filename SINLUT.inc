@@ -1,0 +1,65 @@
+;========================================================
+
+;  SINLUT.inc ? Sine LUTs for Bode injection
+
+;
+
+;  Each entry is a signed 16-bit offset in units of
+
+;  D_ctrl LSB (i.e. 12-bit DAC code units before << 4).
+
+;
+
+;  Usage in controller.s:
+
+;    - extern:  global  BodeSineLUT, BodeSineLUT_LEN
+
+;    - set BodeLen = BodeSineLUT_LEN
+
+;    - index with BodeIdx, each entry is 2 bytes (word)
+
+;========================================================
+
+
+
+#include <xc.inc>
+
+
+
+        psect   sin_lut_code, class=CODE, delta=2
+
+        global  BodeSineLUT
+
+        global  BodeSineLUT_LEN
+
+
+
+
+
+BodeSineLUT_LEN equ 64
+
+
+
+; You can also reference this LUT by the name BodeSineLUT.
+
+BodeSineLUT:
+
+    dw  0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0006
+
+    dw  0x0007, 0x0008, 0x0008, 0x0009, 0x0009, 0x000A, 0x000A, 0x000A
+
+    dw  0x000A, 0x000A, 0x000A, 0x000A, 0x0009, 0x0009, 0x0008, 0x0008
+
+    dw  0x0007, 0x0006, 0x0006, 0x0005, 0x0004, 0x0003, 0x0002, 0x0001
+
+    dw  0x0000, 0xFFFF, 0xFFFE, 0xFFFD, 0xFFFC, 0xFFFB, 0xFFFA, 0xFFFA
+
+    dw  0xFFF9, 0xFFF8, 0xFFF8, 0xFFF7, 0xFFF7, 0xFFF6, 0xFFF6, 0xFFF6
+
+    dw  0xFFF6, 0xFFF6, 0xFFF6, 0xFFF6, 0xFFF7, 0xFFF7, 0xFFF8, 0xFFF8
+
+    dw  0xFFF9, 0xFFFA, 0xFFFA, 0xFFFB, 0xFFFC, 0xFFFD, 0xFFFE, 0xFFFF
+
+
+
+

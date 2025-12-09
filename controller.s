@@ -1,12 +1,14 @@
 ;========================================================
 
-;  controller.s ? FSM + SCAN (triangle) + PI LOCK (BODE stub)
+;  controller_A.s – FSM + SCAN + PI LOCK + BODE (locked)
 
 ;========================================================
 
 
 
 #include <xc.inc>
+
+#include "SINLUT.inc"
 
 
 
@@ -17,6 +19,8 @@
 
 
         global  D_ctrlL, D_ctrlH
+
+        global  D_prevL, D_prevH    
 
         global  CtrlMode
 
@@ -34,6 +38,8 @@
 
 
 
+
+
 ;--------------------------------------------------------
 
 ; Data in ACCESS RAM
@@ -44,13 +50,21 @@
 
 
 
-; main control word for DAC (12-bit)
+; main control word for DAC (logical 12-bit: 0..0xFFFF)
 
 D_ctrlL:        ds  1
 
 D_ctrlH:        ds  1
 
+    
 
+; previous control word (for logging)
+
+D_prevL:        ds  1         
+
+D_prevH:        ds  1       
+
+    
 
 ; mode: 0=SCAN, 1=LOCK, 2=BODE
 
@@ -88,7 +102,7 @@ Y_targetH:      ds  1
 
 
 
-; peak tracking during SCAN (optional)
+; peak tracking during SCAN
 
 YpeakL:         ds  1
 
@@ -142,6 +156,26 @@ D_baseH:        ds  1
 
 
 
+    ; LOCK internal state
+
+LockState:      ds  1        ; 0=SEARCH, 1=PROBE, 2=MEAS, 3=TRACK
+
+LockSide:       ds  1        ; 0=LEFT slope, 1=RIGHT slope
+
+Y_lockBaseL:    ds  1        ; Y at base point (low)
+
+Y_lockBaseH:    ds  1        ; Y at base point (high)
+
+
+
+; temporaries for math
+
+TmpL:           ds  1
+
+TmpH:           ds  1
+
+
+
 ; PI gains: K = Num / 2^Shift
 
 KpNum:          ds  1
@@ -157,6 +191,26 @@ KiShift:        ds  1
 ShiftCnt:       ds  1        ; for shifts
 
 MulCnt:         ds  1        ; for multiplications
+
+
+
+; BODE mode state: sine LUT around locked D_ctrl
+
+BodeBaseL:      ds  1        ; base D_ctrl before injection (for logging if needed)
+
+BodeBaseH:      ds  1
+
+BodeIdx:        ds  1        ; LUT index 0..BodeLen-1
+
+BodeLen:        ds  1        ; LUT length
+
+BodeDeltaL:     ds  1        ; current LUT sample (low byte)
+
+BodeDeltaH:     ds  1        ; current LUT sample (high byte, signed)
+
+BodeInitFlag:   ds  1        ; 0 = not initialised, 1 = initialised
+
+
 
 
 
@@ -178,6 +232,50 @@ STATE_BODE      equ 2
 
 
 
+DCTRL_MAX_L     equ 0xFF      
+
+DCTRL_MAX_H     equ 0xFF      
+
+     
+
+BODE_LUT_LEN    equ 64        ; must match N in SINLUT.inc
+
+
+
+SCAN_STEP     equ 16        ;scan step
+
+     
+
+; LOCK sub-states
+
+LOCK_SEARCH     equ 0         ; sweep D until near Y_target
+
+LOCK_PROBE      equ 1         ; D = D_base + PROBE_STEP
+
+LOCK_MEAS       equ 2         ; measure slope sign
+
+LOCK_TRACK      equ 3         ; normal PI tracking
+
+
+
+; probe step in D_ctrl units (make one LUT index → 16 counts)
+
+PROBE_STEP      equ 16        ; same scale as SCAN_STEP
+
+
+
+; band around Y_target to "capture" lock point
+
+LOCK_CATCH_BAND equ 2         ; |Y - Y_target| <= 2
+
+
+
+; error threshold to declare lost lock
+
+LOST_ERR_THRESH equ 50        ; |Err| > 50 -> lost lock
+
+
+
 ;========================================================
 
 ; Init_Controller
@@ -190,15 +288,15 @@ STATE_BODE      equ 2
 
 Init_Controller:
 
-        ; D_ctrl = 0
-
         clrf    D_ctrlL, A
 
         clrf    D_ctrlH, A
 
+	clrf    D_prevL, A     
+
+        clrf    D_prevH, A     
 
 
-        ; initial mode = SCAN
 
         movlw   STATE_SCAN
 
@@ -206,29 +304,27 @@ Init_Controller:
 
 
 
-        ; Dmax = 0x0FFF (12-bit full scale)
+        ; Dmax = 0xFFFF (16-bit full scale)
 
         movlw   0xFF
 
         movwf   DmaxL, A
 
-        movlw   0x0F
+        movlw   0xFF
 
         movwf   DmaxH, A
 
 
 
-        ; ScanDir = up (0)
-
         clrf    ScanDir, A
 
 
 
-        ; clear measurement / peak / base
-
         clrf    YkL, A
 
         clrf    YkH, A
+
+
 
         clrf    YpeakL, A
 
@@ -245,8 +341,6 @@ Init_Controller:
         clrf    D_baseH, A
 
 
-
-        ; clear PI state
 
         clrf    ErrL, A
 
@@ -270,7 +364,21 @@ Init_Controller:
 
 
 
-        ; default Y_target (will be overwritten when entering LOCK)
+	; LOCK state init
+
+        movlw   LOCK_SEARCH
+
+        movwf   LockState, A
+
+        clrf    LockSide, A
+
+        clrf    Y_lockBaseL, A
+
+        clrf    Y_lockBaseH, A
+
+
+
+        ; Y_target = 0x07D0 (~2000)
 
         movlw   0xD0
 
@@ -282,45 +390,61 @@ Init_Controller:
 
 
 
-        ; PI gains: K = Num / 2^Shift
+        ; Kp, Ki
 
-        ; example: Kp = 2/8 = 0.25, Ki = 1/64 ? 0.016
-
-        movlw   2
+        movlw   5
 
         movwf   KpNum, A
 
-        movlw   3
+        movlw   0
 
         movwf   KpShift, A
 
 
 
-        movlw   1
+        movlw   0
 
         movwf   KiNum, A
 
-        movlw   6
+        movlw   0
 
         movwf   KiShift, A
 
 
 
-        ; RB0 input (button), RD0..2 outputs (mode LEDs)
+        ; RJ0 = button input, RH0..2 = mode LEDs
 
-        bsf     TRISB, 0, A
+        bsf     TRISJ, 0, A
 
-        bcf     TRISD, 0, A
+        bcf     TRISH, 0, A
 
-        bcf     TRISD, 1, A
+        bcf     TRISH, 1, A
 
-        bcf     TRISD, 2, A
+        bcf     TRISH, 2, A
 
 
 
-        ; read initial button state
+        ; clear BODE state
 
-        movf    PORTB, W, A
+        clrf    BodeBaseL, A
+
+        clrf    BodeBaseH, A
+
+        clrf    BodeIdx, A
+
+        clrf    BodeLen, A
+
+        clrf    BodeDeltaL, A
+
+        clrf    BodeDeltaH, A
+
+        clrf    BodeInitFlag, A
+
+
+
+        ; init button prev value
+
+        movf    PORTJ, W, A
 
         andlw   0x01
 
@@ -328,13 +452,11 @@ Init_Controller:
 
 
 
-        ; set LEDs for initial mode
-
         call    UpdateModeLED
 
-
-
         return
+
+
 
 
 
@@ -346,13 +468,17 @@ Init_Controller:
 
 Controller_Step:
 
-        ; handle button and potential mode changes
+    ; Save D_prev = control word that was active in the last control step
 
-        call    UpdateModeFromButton
+        movff   D_ctrlL, D_prevL    
 
+        movff   D_ctrlH, D_prevH    
 
+      
 
-        ; dispatch by CtrlMode
+	call    UpdateModeFromButton
+
+	
 
         movf    CtrlMode, W, A
 
@@ -384,7 +510,7 @@ Controller_Step:
 
 
 
-        ; fallback
+        ; default: SCAN
 
         movlw   STATE_SCAN
 
@@ -394,159 +520,421 @@ Controller_Step:
 
 
 
+
+
 ;--------------------------------------------------------
 
-; SCAN mode: triangle D_ctrl from 0 up to Dmax and back
+; CS_DoScan  – 16-bit sawtooth scan
 
-;   ScanDir = 0: ramp up
+;   D_ctrl = D_ctrl + STEP
 
-;   ScanDir = 1: ramp down
+;   if D_ctrl > Dmax → wrap to 0
 
 ;--------------------------------------------------------
 
 CS_DoScan:
 
-        ; check ScanDir
+        ; ----- add step to D_ctrl -----
 
-        movf    ScanDir, W, A
+        movlw   low(SCAN_STEP)      ; low byte
 
-        andlw   0x01
+        addwf   D_ctrlL, F, A
 
-        btfsc   STATUS, 2, A      ; Z=1 -> ScanDir == 0 (up)
+        movlw   high(SCAN_STEP)     ; high byte
 
-        bra     CS_Scan_Up
+        addwfc  D_ctrlH, F, A        ; add with carry
 
 
 
-        ;----------------------
-
-        ; ScanDir == 1 : down
-
-        ;----------------------
-
-CS_Scan_Down:
-
-        ; if D_ctrl == 0 -> flip direction to up, no change this cycle
+        ; ----- check if D_ctrl > Dmax -----
 
         movf    D_ctrlL, W, A
 
-        iorwf   D_ctrlH, W, A
-
-        btfsc   STATUS, 2, A      ; Z=1 -> D_ctrl == 0
-
-        bra     CS_Scan_DownFlip
-
-
-
-        ; D_ctrl > 0 -> D_ctrl = D_ctrl - 1 (16-bit)
-
-        movlw   0x01
-
-        subwf   D_ctrlL, F, A
-
-        movlw   0x00
-
-        subwfb  D_ctrlH, F, A
-
-        bra     CS_Scan_AfterStep
-
-
-
-CS_Scan_DownFlip:
-
-        ; reached bottom, switch to up
-
-        clrf    ScanDir, A        ; 0 = up
-
-        bra     CS_Scan_AfterStep
-
-
-
-        ;----------------------
-
-        ; ScanDir == 0 : up
-
-        ;----------------------
-
-CS_Scan_Up:
-
-        ; D_ctrl++ (16-bit)
-
-        incf    D_ctrlL, F, A
-
-        btfsc   STATUS, 0, A      ; C bit
-
-        incf    D_ctrlH, F, A
-
-
-
-        ; if D_ctrl > Dmax -> clamp to Dmax and switch direction to down
+        subwf   DmaxL, W, A
 
         movf    D_ctrlH, W, A
 
-        subwf   DmaxH, W, A       ; W = DmaxH - D_ctrlH
-
-        btfss   STATUS, 0, A      ; C=0 -> D_ctrlH > DmaxH
-
-        bra     CS_Scan_UpClamp
+        subwfb  DmaxH, W, A
 
 
 
-        movf    D_ctrlH, W, A
+        btfsc   STATUS, 0, A         ; C=1 → Dmax ≥ D_ctrl → OK
 
-        xorwf   DmaxH, W, A
-
-        btfss   STATUS, 2, A      ; high bytes differ
-
-        bra     CS_Scan_AfterStep
+        bra     CS_Scan_Done         ; no wrap
 
 
 
-        movf    D_ctrlL, W, A
+        ; ----- wrap to zero -----
 
-        subwf   DmaxL, W, A       ; W = DmaxL - D_ctrlL
+        clrf    D_ctrlL, A
 
-        btfss   STATUS, 0, A      ; C=0 -> D_ctrlL > DmaxL
-
-        bra     CS_Scan_UpClamp
+        clrf    D_ctrlH, A
 
 
 
-        bra     CS_Scan_AfterStep
-
-
-
-CS_Scan_UpClamp:
-
-        movff   DmaxL, D_ctrlL
-
-        movff   DmaxH, D_ctrlH
-
-        movlw   1
-
-        movwf   ScanDir, A        ; 1 = down
-
-
-
-CS_Scan_AfterStep:
-
-        ; optional: track peak during scan
+CS_Scan_Done:
 
         call    CS_UpdatePeakFromY
 
         return
 
-
+	
 
 ;--------------------------------------------------------
 
-; LOCK mode: PI controller (DC-lock)
+; CS_DoLock – LOCK mode with internal sub-states
+
+;   LOCK_SEARCH:
+
+;       - sweep D_ctrl until |Yk - Y_target| <= LOCK_CATCH_BAND
+
+;       - then store D_base and Y_lockBase, go to PROBE
+
+;   LOCK_PROBE:
+
+;       - set D_ctrl = D_base + PROBE_STEP (small nudge)
+
+;       - go to MEAS
+
+;   LOCK_MEAS:
+
+;       - measure slope dY = Yk - Y_lockBase
+
+;       - if dY >= 0  -> LEFT slope (dY/dD > 0)
+
+;         else       -> RIGHT slope (dY/dD < 0)
+
+;       - restore D_ctrl = D_base, go to TRACK
+
+;   LOCK_TRACK:
+
+;       - PI control around D_base
+
+;       - Err_raw = Y_target - Yk
+
+;       - if RIGHT slope -> Err = -Err_raw
+
+;       - if |Err| > LOST_ERR_THRESH -> lost lock -> back to SEARCH
 
 ;--------------------------------------------------------
 
 CS_DoLock:
 
-        ; 1) Err = Y_target - Yk
+        ; branch on LockState
+
+        movf    LockState, W, A
+
+        xorlw   LOCK_SEARCH
+
+        btfsc   STATUS, 2, A
+
+        bra     CDL_Search
+
+
+
+        movf    LockState, W, A
+
+        xorlw   LOCK_PROBE
+
+        btfsc   STATUS, 2, A
+
+        bra     CDL_Probe
+
+
+
+        movf    LockState, W, A
+
+        xorlw   LOCK_MEAS
+
+        btfsc   STATUS, 2, A
+
+        bra     CDL_Meas
+
+
+
+        ; otherwise: TRACK
+
+        bra     CDL_Track
+
+
+
+;---------------- LOCK_SEARCH: sweep D_ctrl until near Y_target -----
+
+CDL_Search:
+
+        ; diff = Y_target - Yk  -> TmpH:TmpL (signed)
+
+        movf    YkL, W, A
+
+        subwf   Y_targetL, W, A   ; W = Y_targetL - YkL
+
+        movwf   TmpL, A
+
+
+
+        movf    YkH, W, A
+
+        subwfb  Y_targetH, W, A   ; W = Y_targetH - YkH
+
+        movwf   TmpH, A
+
+
+
+        ; |diff| -> TmpH:TmpL (absolute value)
+
+        movf    TmpH, W, A
+
+        andlw   0x80
+
+        btfsc   STATUS, 2, A
+
+        bra     CDL_SearchAbsDone
+
+
+
+        ; negative -> two's complement
+
+        comf    TmpL, F, A
+
+        comf    TmpH, F, A
+
+        incf    TmpL, F, A
+
+        movf    TmpL, W, A
+
+        addwfc  TmpH, F, A
+
+
+
+CDL_SearchAbsDone:
+
+        ; compare |diff| with LOCK_CATCH_BAND
+
+        movlw   low(LOCK_CATCH_BAND)
+
+        subwf   TmpL, W, A
+
+        movlw   high(LOCK_CATCH_BAND)
+
+        subwfb  TmpH, W, A
+
+
+
+        ; if LOCK_CATCH_BAND >= |diff|  (C=1) -> capture point
+
+        btfsc   STATUS, 0, A
+
+        bra     CDL_SearchCaptured
+
+
+
+        ; not yet in band -> keep sweeping D_ctrl (step = +1)
+
+        incf    D_ctrlL, F, A
+
+        btfsc   STATUS, 0, A
+
+        incf    D_ctrlH, F, A
+
+
+
+        ; wrap if D_ctrl > Dmax
+
+        movf    D_ctrlL, W, A
+
+        subwf   DmaxL, W, A
+
+        movf    D_ctrlH, W, A
+
+        subwfb  DmaxH, W, A
+
+        btfsc   STATUS, 0, A
+
+        bra     CDL_SearchDone   ; Dmax >= D_ctrl -> OK
+
+
+
+        ; wrap to zero
+
+        clrf    D_ctrlL, A
+
+        clrf    D_ctrlH, A
+
+
+
+CDL_SearchDone:
+
+        return
+
+
+
+CDL_SearchCaptured:
+
+        ; store base point and Y at base
+
+        movff   D_ctrlL, D_baseL
+
+        movff   D_ctrlH, D_baseH
+
+
+
+        movff   YkL, Y_lockBaseL
+
+        movff   YkH, Y_lockBaseH
+
+
+
+        ; clear integral
+
+        clrf    IntL, A
+
+        clrf    IntH, A
+
+
+
+        ; next state: PROBE
+
+        movlw   LOCK_PROBE
+
+        movwf   LockState, A
+
+        return
+
+
+
+;---------------- LOCK_PROBE: D_ctrl = D_base + PROBE_STEP ----------
+
+CDL_Probe:
+
+        movff   D_baseL, D_ctrlL
+
+        movff   D_baseH, D_ctrlH
+
+
+
+        ; Clear carry before 16-bit add
+
+        bcf     STATUS, 0, A
+
+
+
+        movlw   low(PROBE_STEP)
+
+        addwf   D_ctrlL, F, A
+
+        movlw   high(PROBE_STEP)
+
+        addwfc  D_ctrlH, F, A
+
+
+
+        ; simple saturation to max if overflow
+
+        btfsc   STATUS, 0, A
+
+        bra     CDL_ProbeClampHigh
+
+        bra     CDL_ProbeSetState
+
+
+
+CDL_ProbeClampHigh:
+
+        movlw   DCTRL_MAX_L
+
+        movwf   D_ctrlL, A
+
+        movlw   DCTRL_MAX_H
+
+        movwf   D_ctrlH, A
+
+
+
+CDL_ProbeSetState:
+
+        movlw   LOCK_MEAS
+
+        movwf   LockState, A
+
+        return
+
+
+
+;---------------- LOCK_MEAS: measure slope sign ---------------------
+
+CDL_Meas:
+
+        ; dY = Yk - Y_lockBase  -> TmpH:TmpL
+
+        movf    YkL, W, A
+
+        subwf   Y_lockBaseL, W, A
+
+        movwf   TmpL, A
+
+
+
+        movf    YkH, W, A
+
+        subwfb  Y_lockBaseH, W, A
+
+        movwf   TmpH, A
+
+
+
+        ; check sign bit of dY (TmpH)
+
+        movf    TmpH, W, A
+
+        andlw   0x80
+
+        btfsc   STATUS, 2, A
+
+        bra     CDL_SlopeLeft    ; sign=0 -> dY>=0 -> LEFT slope
+
+
+
+        ; negative -> RIGHT slope
+
+        movlw   1                ; LOCK_SIDE_RIGHT
+
+        movwf   LockSide, A
+
+        bra     CDL_SlopeDone
+
+
+
+CDL_SlopeLeft:
+
+        clrf    LockSide, A      ; 0 = LEFT
+
+
+
+CDL_SlopeDone:
+
+        ; restore D_ctrl = D_base
+
+        movff   D_baseL, D_ctrlL
+
+        movff   D_baseH, D_ctrlH
+
+
+
+        ; enter TRACK
+
+        movlw   LOCK_TRACK
+
+        movwf   LockState, A
+
+        return
+
+
+
+;---------------- LOCK_TRACK: PI + lost-lock detection --------------
+
+CDL_Track:
+
+        ; 1) Err_raw = Y_target - Yk
 
         movff   Y_targetL, ErrL
 
@@ -564,17 +952,41 @@ CS_DoLock:
 
 
 
-        ; 2) Pterm = Kp * Err
+        ; 2) If RIGHT slope -> Err = -Err_raw
 
-        call    Scale_Err_Kp      ; PtermH:L
+        movf    LockSide, W, A
 
+        btfsc   STATUS, 2, A
 
-
-        ; 3) Iinc = Ki * Err, Int += Iinc
-
-        call    Scale_Err_Ki      ; IincH:L
+        bra     CDL_ErrSignDone  ; LockSide==0 (LEFT) -> keep sign
 
 
+
+        ; RIGHT slope (LockSide!=0) -> two's complement
+
+        comf    ErrL, F, A
+
+        comf    ErrH, F, A
+
+        incf    ErrL, F, A
+
+        movf    ErrL, W, A
+
+        addwfc  ErrH, F, A
+
+
+
+CDL_ErrSignDone:
+
+        ; 3) Pterm = Kp * Err
+
+        call    Scale_Err_Kp
+
+
+
+        ; 4) Iinc = Ki * Err, Int += Iinc
+
+        call    Scale_Err_Ki
 
         movf    IincL, W, A
 
@@ -586,11 +998,7 @@ CS_DoLock:
 
 
 
-        ; (optional: anti-windup could clamp Int here)
-
-
-
-        ; 4) Corr = Pterm + Int
+        ; 5) Corr = Pterm + Int
 
         movff   PtermL, CorrL
 
@@ -608,11 +1016,15 @@ CS_DoLock:
 
 
 
-        ; 5) D_ctrl = D_base + Corr, with clamp to 0..0x0FFF
+        ; 6) D_ctrl = D_base + Corr, saturate to 0..0xFFFF
 
         movff   D_baseL, D_ctrlL
 
         movff   D_baseH, D_ctrlH
+
+
+
+        bcf     STATUS, 0, A      ; C = 0 before add
 
 
 
@@ -626,19 +1038,7 @@ CS_DoLock:
 
 
 
-        ; clamp high nibble > 0x0F -> 0x0FFF
-
-        movf    D_ctrlH, W, A
-
-        andlw   0xF0
-
-        btfss   STATUS, 2, A
-
-        bra     PI_Clamp_High
-
-
-
-        ; if negative (sign bit set), clamp to 0
+        ; negative -> clamp to 0
 
         movf    D_ctrlH, W, A
 
@@ -646,29 +1046,37 @@ CS_DoLock:
 
         btfss   STATUS, 2, A
 
-        bra     PI_Clamp_Zero
+        bra     PI_Clamp_Zero_Track
 
 
 
-        bra     PI_Done
+        ; overflow (carry) -> clamp to max
+
+        btfsc   STATUS, 0, A
+
+        bra     PI_Clamp_High_Track
 
 
 
-PI_Clamp_High:
+        bra     PI_Done_Track
 
-        movlw   0x0F
 
-        movwf   D_ctrlH, A
 
-        movlw   0xFF
+PI_Clamp_High_Track:
+
+        movlw   DCTRL_MAX_L
 
         movwf   D_ctrlL, A
 
-        bra     PI_Done
+        movlw   DCTRL_MAX_H
+
+        movwf   D_ctrlH, A
+
+        bra     PI_Done_Track
 
 
 
-PI_Clamp_Zero:
+PI_Clamp_Zero_Track:
 
         clrf    D_ctrlL, A
 
@@ -676,7 +1084,75 @@ PI_Clamp_Zero:
 
 
 
-PI_Done:
+PI_Done_Track:
+
+        ; 7) lost-lock detection: |Err| > LOST_ERR_THRESH ?
+
+        movff   ErrL, TmpL
+
+        movff   ErrH, TmpH
+
+
+
+        ; |Err| into TmpH:TmpL
+
+        movf    TmpH, W, A
+
+        andlw   0x80
+
+        btfsc   STATUS, 2, A
+
+        bra     CDL_AbsErrDone
+
+
+
+        comf    TmpL, F, A
+
+        comf    TmpH, F, A
+
+        incf    TmpL, F, A
+
+        movf    TmpL, W, A
+
+        addwfc  TmpH, F, A
+
+
+
+CDL_AbsErrDone:
+
+        movlw   low(LOST_ERR_THRESH)
+
+        subwf   TmpL, W, A
+
+        movlw   high(LOST_ERR_THRESH)
+
+        subwfb  TmpH, W, A
+
+
+
+        ; if LOST_ERR_THRESH >= |Err| (C=1) -> still locked
+
+        btfsc   STATUS, 0, A
+
+        bra     CDL_TrackDone
+
+
+
+        ; else: lost lock -> go back to SEARCH
+
+        movlw   LOCK_SEARCH
+
+        movwf   LockState, A
+
+        ; optional: clear integral for fresh search
+
+        clrf    IntL, A
+
+        clrf    IntH, A
+
+
+
+CDL_TrackDone:
 
         return
 
@@ -684,71 +1160,269 @@ PI_Done:
 
 ;--------------------------------------------------------
 
-; BODE mode: placeholder for future frequency-response logic
+; CS_InitBode
+
+; Initialize LUT index and length for BODE mode.
+
+;--------------------------------------------------------
+
+CS_InitBode:
+
+        clrf    BodeIdx, A
+
+        movlw   BODE_LUT_LEN
+
+        movwf   BodeLen, A
+
+        movlw   1
+
+        movwf   BodeInitFlag, A
+
+        return
+
+
+
+
+
+;--------------------------------------------------------
+
+; CS_DoBode
+
+; Bode while locked:
+
+; 1) Run PI lock (CS_DoLock) to keep loop closed.
+
+; 2) Take current D_ctrl as base.
+
+; 3) Add sine LUT sample Δ[k] on top, clamp to 16-bit.
+
+; 4) Advance LUT index with wrap.
 
 ;--------------------------------------------------------
 
 CS_DoBode:
 
+        ; lazy init for LUT length and index
+
+        movf    BodeInitFlag, W, A
+
+        btfsc   STATUS, 2, A
+
+        call    CS_InitBode
+
+
+
+        ; step 1: run PI lock
+
+        call    CS_DoLock
+
+
+
+        ; base = locked D_ctrl (for logging if needed)
+
+        movff   D_ctrlL, BodeBaseL
+
+        movff   D_ctrlH, BodeBaseH
+
+
+
+        ;--------------------------------------------
+
+        ; set TBLPTR = BodeLUT + 2 * BodeIdx
+
+        ;--------------------------------------------
+
+        movlw   low highword(BodeSineLUT)
+
+        movwf   TBLPTRU, A
+
+        movlw   high(BodeSineLUT)
+
+        movwf   TBLPTRH, A
+
+        movlw   low(BodeSineLUT)
+
+        movwf   TBLPTRL, A
+
+
+
+        movf    BodeIdx, W, A
+
+        addwf   BodeIdx, W, A      ; W = BodeIdx*2
+
+        addwf   TBLPTRL, F, A
+
+        clrf    WREG, A
+
+        addwfc  TBLPTRH, F, A
+
+
+
+        ; read ΔL
+
+        tblrd*+
+
+        movf    TABLAT, W, A
+
+        movwf   BodeDeltaL, A
+
+
+
+        ; read ΔH
+
+        tblrd*
+
+        movf    TABLAT, W, A
+
+        movwf   BodeDeltaH, A
+
+
+
+        ;--------------------------------------------
+
+        ; D_ctrl = locked D_ctrl + Δ (signed)
+
+        ;--------------------------------------------
+
+        movff   BodeBaseL, D_ctrlL
+
+        movff   BodeBaseH, D_ctrlH
+
+
+
+        movf    BodeDeltaL, W, A
+
+        addwf   D_ctrlL, F, A
+
+        movf    BodeDeltaH, W, A
+
+        addwfc  D_ctrlH, F, A
+
+
+
+        ; clamp to 0..0xFFFF
+
+        ; check negative -> clamp to 0
+
+        movf    D_ctrlH, W, A
+
+        andlw   0x80
+
+        btfss   STATUS, 2, A
+
+        bra     Bode_Clamp_Zero
+
+
+
+        ; check carry -> clamp to max
+
+        btfsc   STATUS, 0, A
+
+        bra     Bode_Clamp_High
+
+
+
+        bra     Bode_Clamp_Done
+
+
+
+Bode_Clamp_High:
+
+        movlw   DCTRL_MAX_L
+
+        movwf   D_ctrlL, A
+
+        movlw   DCTRL_MAX_H
+
+        movwf   D_ctrlH, A
+
+        bra     Bode_Clamp_Done
+
+
+
+Bode_Clamp_Zero:
+
+        clrf    D_ctrlL, A
+
+        clrf    D_ctrlH, A
+
+
+
+Bode_Clamp_Done:
+
+        ; advance index with wrap
+
+        incf    BodeIdx, F, A
+
+        movf    BodeIdx, W, A
+
+        xorwf   BodeLen, W, A
+
+        btfss   STATUS, 2, A
+
+        bra     CSBode_End
+
+
+
+        clrf    BodeIdx, A
+
+
+
+CSBode_End:
+
         return
+
+
 
 
 
 ;--------------------------------------------------------
 
-; UpdateModeFromButton: RB0 press -> next mode
+; UpdateModeFromButton: RJ0 press -> next mode
 
-;   0 -> 1 -> 2 -> 0
-
-;   On entering SCAN: reset scan and peak
-
-;   On entering LOCK: snapshot D_ctrl and Yk
+; 0 -> 1 -> 2 -> 0  (active-low button)
 
 ;--------------------------------------------------------
 
 UpdateModeFromButton:
 
-        ; read current button
+        ; read current button (RJ0)
 
-        movf    PORTB, W, A
+        movf    PORTJ, W, A
 
         andlw   0x01
 
-        movwf   TmpBtn, A        ; Now
+        movwf   TmpBtn, A
 
 
 
-        ; Prev in BtnPrev
+        ; Prev = BtnPrev & 0x01
 
         movf    BtnPrev, W, A
 
         andlw   0x01
 
-        btfsc   STATUS, 2, A     ; Prev = 0?
+        btfsc   STATUS, 2, A
 
-        bra     UMB_NoPress      ; only look for 1->0
+        bra     UMB_NoPress       ; Prev == 0 -> no falling edge
 
 
 
-        ; Prev=1, Now=0 -> press
+        ; Now = TmpBtn & 0x01
 
         movf    TmpBtn, W, A
 
         andlw   0x01
 
-        btfsc   STATUS, 2, A     ; Now=0?
+        btfsc   STATUS, 2, A
 
-        bra     UMB_Press
-
-
+        bra     UMB_Press         ; Prev=1, Now=0 -> press
 
         bra     UMB_NoPress
 
 
 
 UMB_Press:
-
-        ; CtrlMode = (CtrlMode + 1) mod 3
 
         incf    CtrlMode, F, A
 
@@ -762,13 +1436,15 @@ UMB_Press:
 
         bra     UMB_ModeOk
 
+
+
         clrf    CtrlMode, A
 
 
 
 UMB_ModeOk:
 
-        ; if new mode is SCAN, reset D_ctrl, scan dir and peak info
+        ; actions on entering new mode
 
         movf    CtrlMode, W, A
 
@@ -780,13 +1456,13 @@ UMB_ModeOk:
 
 
 
+        ; entering SCAN: reset scan & peak
+
         clrf    D_ctrlL, A
 
         clrf    D_ctrlH, A
 
-        clrf    ScanDir, A           ; start going up again
-
-
+        clrf    ScanDir, A
 
         clrf    YpeakL, A
 
@@ -796,15 +1472,11 @@ UMB_ModeOk:
 
         clrf    D_at_YpeakH, A
 
-
-
         bra     UMB_UpdateLED
 
 
 
 UMB_CheckLock:
-
-        ; if new mode is LOCK, snapshot base and target
 
         movf    CtrlMode, W, A
 
@@ -812,11 +1484,19 @@ UMB_CheckLock:
 
         btfss   STATUS, 2, A
 
-        bra     UMB_UpdateLED
+        bra     UMB_CheckBode
 
 
 
-        ; 1) snapshot current D_ctrl as D_base
+        ; entering LOCK:
+
+        ; - keep manually-set Y_target
+
+        ; - start from current D_ctrl
+
+        ; - clear integral
+
+        ; - set internal state to SEARCH
 
         movff   D_ctrlL, D_baseL
 
@@ -824,19 +1504,39 @@ UMB_CheckLock:
 
 
 
-        ; 2) snapshot current Yk as Y_target
-
-        movff   YkL, Y_targetL
-
-        movff   YkH, Y_targetH
-
-
-
-        ; 3) clear integral
-
         clrf    IntL, A
 
         clrf    IntH, A
+
+
+
+        movlw   LOCK_SEARCH
+
+        movwf   LockState, A
+
+        clrf    LockSide, A
+
+
+
+        bra     UMB_UpdateLED
+
+
+
+UMB_CheckBode:
+
+        movf    CtrlMode, W, A
+
+        xorlw   STATE_BODE
+
+        btfss   STATUS, 2, A
+
+        bra     UMB_UpdateLED
+
+
+
+        ; entering BODE: mark LUT uninitialised
+
+        clrf    BodeInitFlag, A
 
 
 
@@ -856,19 +1556,21 @@ UMB_NoPress:
 
 
 
+
+
 ;--------------------------------------------------------
 
-; UpdateModeLED: RD0=SCAN, RD1=LOCK, RD2=BODE
+; UpdateModeLED: RH0=SCAN, RH1=LOCK, RH2=BODE
 
 ;--------------------------------------------------------
 
 UpdateModeLED:
 
-        bcf     LATD, 0, A
+        bcf     LATH, 0, A
 
-        bcf     LATD, 1, A
+        bcf     LATH, 1, A
 
-        bcf     LATD, 2, A
+        bcf     LATH, 2, A
 
 
 
@@ -878,7 +1580,7 @@ UpdateModeLED:
 
         btfsc   STATUS, 2, A
 
-        bsf     LATD, 0, A
+        bsf     LATH, 0, A
 
 
 
@@ -888,7 +1590,7 @@ UpdateModeLED:
 
         btfsc   STATUS, 2, A
 
-        bsf     LATD, 1, A
+        bsf     LATH, 1, A
 
 
 
@@ -898,7 +1600,7 @@ UpdateModeLED:
 
         btfsc   STATUS, 2, A
 
-        bsf     LATD, 2, A
+        bsf     LATH, 2, A
 
 
 
@@ -906,21 +1608,23 @@ UpdateModeLED:
 
 
 
+
+
 ;--------------------------------------------------------
 
-; CS_UpdatePeakFromY: unsigned peak tracking during SCAN
+; CS_UpdatePeakFromY
 
 ;--------------------------------------------------------
 
 CS_UpdatePeakFromY:
 
-        ; compare Yk and Ypeak (unsigned 16-bit)
+        ; if Yk > Ypeak -> update peak
 
         movf    YkH, W, A
 
-        subwf   YpeakH, W, A     ; W = YpeakH - YkH
+        subwf   YpeakH, W, A
 
-        btfss   STATUS, 0, A     ; C=0 -> YkH > YpeakH
+        btfss   STATUS, 0, A
 
         bra     CUP_NewPeak
 
@@ -930,7 +1634,7 @@ CS_UpdatePeakFromY:
 
         xorwf   YpeakH, W, A
 
-        btfss   STATUS, 2, A     ; high bytes differ
+        btfss   STATUS, 2, A
 
         bra     CUP_End
 
@@ -938,9 +1642,9 @@ CS_UpdatePeakFromY:
 
         movf    YkL, W, A
 
-        subwf   YpeakL, W, A     ; W = YpeakL - YkL
+        subwf   YpeakL, W, A
 
-        btfss   STATUS, 0, A     ; C=0 -> YkL > YpeakL
+        btfss   STATUS, 0, A
 
         bra     CUP_NewPeak
 
@@ -968,13 +1672,11 @@ CUP_End:
 
 
 
+
+
 ;--------------------------------------------------------
 
-; Scale_Err_Kp: Pterm = (KpNum * Err) >> KpShift  (signed)
-
-;   Inputs: ErrH:L, KpNum, KpShift
-
-;   Output: PtermH:L
+; Scale_Err_Kp: Pterm = (KpNum * Err) >> KpShift (signed)
 
 ;--------------------------------------------------------
 
@@ -994,7 +1696,7 @@ Scale_Err_Kp:
 
         btfsc   STATUS, 2, A
 
-        bra     SEKp_Shift       ; Num==0
+        bra     SEKp_Shift       ; Num == 0
 
 
 
@@ -1066,13 +1768,11 @@ SEKp_Done:
 
 
 
+
+
 ;--------------------------------------------------------
 
-; Scale_Err_Ki: Iinc = (KiNum * Err) >> KiShift  (signed)
-
-;   Inputs: ErrH:L, KiNum, KiShift
-
-;   Output: IincH:L
+; Scale_Err_Ki: Iinc = (KiNum * Err) >> KiShift (signed)
 
 ;--------------------------------------------------------
 
@@ -1092,7 +1792,7 @@ Scale_Err_Ki:
 
         btfsc   STATUS, 2, A
 
-        bra     SEKi_Shift       ; Num==0
+        bra     SEKi_Shift       ; Num == 0
 
 
 
@@ -1161,6 +1861,3 @@ SEKi_ShiftLoop:
 SEKi_Done:
 
         return
-
-
-

@@ -17,15 +17,11 @@
     <logicalFolder name="SourceFiles"
                    displayName="Source Files"
                    projectFiles="true">
-      <itemPath>UART.s</itemPath>
-      <itemPath>main.s</itemPath>
       <itemPath>config.s</itemPath>
-      <itemPath>12bit_to_10bit.s</itemPath>
+      <itemPath>controller.s</itemPath>
       <itemPath>DAC_setup.s</itemPath>
-      <itemPath>LCD.s</itemPath>
-      <itemPath>Mul.s</itemPath>
+      <itemPath>maincontroller.s</itemPath>
       <itemPath>UART_1.s</itemPath>
-      <itemPath>UART_2.s</itemPath>
     </logicalFolder>
   </logicalFolder>
   <sourceRootList>
@@ -74,30 +70,6 @@
         <makeCustomizationEnableLongLines>false</makeCustomizationEnableLongLines>
         <makeCustomizationNormalizeHexFile>false</makeCustomizationNormalizeHexFile>
       </makeCustomizationType>
-      <item path="12bit_to_10bit.s" ex="false" overriding="false">
-        <pic-as-assembler>
-        </pic-as-assembler>
-        <pic-as-global>
-        </pic-as-global>
-        <pic-as-linker>
-        </pic-as-linker>
-      </item>
-      <item path="LCD.s" ex="false" overriding="false">
-        <pic-as-assembler>
-        </pic-as-assembler>
-        <pic-as-global>
-        </pic-as-global>
-        <pic-as-linker>
-        </pic-as-linker>
-      </item>
-      <item path="Mul.s" ex="false" overriding="false">
-        <pic-as-assembler>
-        </pic-as-assembler>
-        <pic-as-global>
-        </pic-as-global>
-        <pic-as-linker>
-        </pic-as-linker>
-      </item>
       <Simulator>
         <property key="codecoverage.enabled" value="Disable"/>
         <property key="codecoverage.enableoutputtofile" value="false"/>
@@ -635,7 +607,7 @@
         <property key="periphComp6.gte" value="gt"/>
         <property key="poweroptions.powerenable" value="false"/>
         <property key="programmerToGoFilePath"
-                  value="C:/Users/ms1923/OneDrive - Imperial College London/Year 3/MicroprocessorProject/debug/default/default_ptg"/>
+                  value="/Users/mahdishikha/MPLABXProjects/Microprocessor-Project/debug/default/default_ptg"/>
         <property key="programmerToGoImageName" value="default_ptg"/>
         <property key="programoptions.donoteraseauxmem" value="false"/>
         <property key="programoptions.eraseb4program" value="true"/>
@@ -1112,14 +1084,6 @@
                   value=""/>
         <property key="warningmessagebreakoptions.warningmessages" value="holdstate"/>
       </Tool>
-      <item path="UART.s" ex="false" overriding="false">
-        <pic-as-assembler>
-        </pic-as-assembler>
-        <pic-as-global>
-        </pic-as-global>
-        <pic-as-linker>
-        </pic-as-linker>
-      </item>
       <pic-as-assembler>
         <property key="fmax-errors" value="20"/>
         <property key="list-custom-assembler-options" value=""/>
@@ -1200,6 +1164,8 @@
         <property key="memories.programmemory" value="true"/>
         <property key="memories.programmemory.ranges" value="0-1ffff"/>
         <property key="poweroptions.powerenable" value="false"/>
+        <property key="programmerToGoFilePath"
+                  value="/Users/mahdishikha/MPLABXProjects/Microprocessor-Project/debug/default/default_ptg"/>
         <property key="programmerToGoImageName" value="default_ptg"/>
         <property key="programoptions.donoteraseauxmem" value="false"/>
         <property key="programoptions.eraseb4program" value="true"/>
