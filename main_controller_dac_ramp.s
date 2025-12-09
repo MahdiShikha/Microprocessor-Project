@@ -1,7 +1,7 @@
 ;========================================================
-; main_controller_dac_ramp.s
+; main_controller_dac_ramp.s  (16-bit version)
 ;   PIC #1 (controller PIC):
-;   Drives Mikro DAC 2 with a 0→4095 ramp over ~15–20 s.
+;   Drives Mikro DAC 2 with a 0?0xFFFF ramp.
 ;   Uses external:
 ;       SPI1_Init
 ;       DAC_WriteWord_16bit
@@ -13,23 +13,29 @@
     extrn   DAC_WriteWord_16bit
     extrn   DAC_high, DAC_low      ; 16-bit value used by your DAC driver
 
-; Simple software delay
+;--------------------------------------------------------
+; RAM for delay counters
+;--------------------------------------------------------
     psect   udata_acs
 RampDelay1: ds 1
 RampDelay2: ds 1
 
+;--------------------------------------------------------
+; Reset vector
+;--------------------------------------------------------
     psect   code, abs
     org 0x0000
     goto    main_controller
 
 ;--------------------------------------------------------
-; ~4 ms-ish delay (for a ~16 s full sweep)
+; ~few-ms delay (tune constants for desired sweep time)
 ;--------------------------------------------------------
+    psect   code
 RampDelay:
-    movlw   d'250'
+    movlw   125            ; was 250 in old 12-bit version
     movwf   RampDelay1, A
 RD_L1:
-    movlw   d'80'
+    movlw   80
     movwf   RampDelay2, A
 RD_L2:
     decfsz  RampDelay2, F, A
@@ -39,9 +45,8 @@ RD_L2:
     return
 
 ;--------------------------------------------------------
-; Main: ramp DAC_high:DAC_low from 0x0000 to 0x0FFF
+; Main: ramp DAC_high:DAC_low from 0x0000 to 0xFFFF
 ;--------------------------------------------------------
-    psect   code
 main_controller:
     ; Initialise SPI and DAC
     call    SPI1_Init
@@ -51,29 +56,43 @@ main_controller:
     clrf    DAC_low,  A
 
 Ramp_Loop:
-    ; Send current 16-bit word to DAC
+    ; 1) Send current 16-bit word to DAC
     call    DAC_WriteWord_16bit
 
-    ; Delay between steps (controls total sweep time)
+    ; 2) Delay between steps (controls total sweep time)
     call    RampDelay
 
-    ; Increment 12-bit DAC code in DAC_high:DAC_low
-    incf    DAC_low, F, A
-    btfss   STATUS, Z, A          ; if DAC_low rolled over 0xFF→0x00
-    bra     No_Low_Overflow
-    incf    DAC_high, F, A
-No_Low_Overflow:
-
-    ; Stop when code reaches 0x1000 (just after 0x0FFF)
+    ; 3) If we've already output 0xFFFF, stop ramping
     movf    DAC_high, W, A
-    xorlw   0x10                  ; high == 0x10 ?
-    btfsc   STATUS, Z, A
+    xorlw   0xFF
+    btfss   STATUS, 2, A        ; Z=1 if DAC_high == 0xFF
+    bra     NotMax
+
+    movf    DAC_low, W, A
+    xorlw   0xFF
+    btfss   STATUS, 2, A        ; Z=1 if DAC_low == 0xFF
+    bra     NotMax
+
+    ; Here DAC_high==0xFF and DAC_low==0xFF -> we're done
     bra     Ramp_Done
 
+NotMax:
+    ; 4) Increment 16-bit DAC code: DAC_low++, carry into DAC_high
+    incf    DAC_low, F, A
+    ; incf sets Z=1 only when result is 0x00. If not 0, just loop.
+    btfss   STATUS, 2, A        ; Z flag
     bra     Ramp_Loop
 
+    ; low byte wrapped 0xFF?0x00, so bump high byte
+    incf    DAC_high, F, A
+    bra     Ramp_Loop
+
+;--------------------------------------------------------
+; Ramp_Done:
+;   We have output 0xFFFF to the DAC. Sit here forever
+;   (or modify if you want repeat / ramp down etc.).
+;--------------------------------------------------------
 Ramp_Done:
-    ; Hold final value forever
     bra     Ramp_Done
 
     end
