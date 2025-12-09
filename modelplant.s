@@ -11,8 +11,7 @@
 ;
 ;  Notes:
 ;    - If alpha = 1  -> i_base = Ak
-;    - FP_LUT stores values 0..3000 (approx 12-bit peak)
-;    - Final Y will be clipped to 0..4095 (12-bit), not 0xFFFF
+;    - FP_LUT stores values 0..1000;    - Final Y will be clipped to 0..4095 (12-bit), not 0xFFFF
 ;========================================================
 
 #include <xc.inc>
@@ -81,11 +80,11 @@ Rand:           ds  1      ; 8-bit pseudo-random state
 ;   0x01 = +1
 ;   0xFF = -1
 NoiseTable_Y:
-        db  1      ; 0: -1
-        db   1      ; 1: +1
+        db  0      ; 0: 0
+        db   -1      ; 1: +1
         db   0      ; 2:  0
         db   0      ; 3:  0
-        db  1      ; 4: -1
+        db  -1      ; 4: -1
         db   1      ; 5: +1
         db   0      ; 6:  0
         db   1      ; 7: +1
@@ -131,7 +130,7 @@ Init_Model:
         clrf    DriftSpeedH, A
 
         ; Drift: update roughly every 50 cycles
-        movlw   40
+        movlw   50
         movwf   DriftDiv, A
         clrf    DriftTick, A
 
@@ -214,7 +213,7 @@ UpdateRand:
 ; Add_Y_Noise
 ;   Uses Rand & 0x07 as index into NoiseTable_Y
 ;   Adds (-1, 0, or +1) to Yk, with clipping at 0
-;   FP LUT peak is around 3000, so +/-1 is very small
+;   FP LUT peak is around 1000, so +/-1 is very small
 ;--------------------------------------------------------
 Add_Y_Noise:
         ; Rand is updated in ModelPlant before Y-noise
@@ -410,6 +409,3 @@ ModelPlant:
 
 MP_Return:
         return
-
-
-
