@@ -24,10 +24,10 @@ ADCDelay2: ds 1
 ; Small delay (~1 ms-ish) between ADC samples
 ;--------------------------------------------------------
 ADC_SmallDelay:
-    movlw   d'100'
+    movlw   100
     movwf   ADCDelay1, A
 AD_L1:
-    movlw   d'80'
+    movlw   80
     movwf   ADCDelay2, A
 AD_L2:
     decfsz  ADCDelay2, F, A
@@ -50,7 +50,7 @@ ADC_Stream_Loop:
     call    ADC_Read           ; ADRESH:ADRESL now holds 12-bit result
 
     ; 2) Send frame: [0xAA][ADRESH][ADRESL]
-    movlw   0xAA               ; header byte
+    movlw   0xFF               ; header byte
     call    UART_Transmit_Byte
 
     movf    ADRESH, W, A
