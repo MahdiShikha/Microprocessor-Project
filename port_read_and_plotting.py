@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from serial.tools import list_ports
 
 
-PORT = "COM4"
+PORT = "COM5"
 BAUD = 115200
 NUM_SAMPLES = 100000
 
