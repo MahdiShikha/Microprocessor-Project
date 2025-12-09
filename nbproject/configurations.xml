@@ -21,16 +21,14 @@
       <itemPath>README.md</itemPath>
       <itemPath>config.s</itemPath>
       <itemPath>port_read_and_plotting.py</itemPath>
-      <itemPath>12Bit_to_10.s</itemPath>
       <itemPath>FP_LUT.inc</itemPath>
-      <itemPath>Mul.s</itemPath>
       <itemPath>UART_plant.s</itemPath>
       <itemPath>main_plant.s</itemPath>
       <itemPath>modelplant.s</itemPath>
     </logicalFolder>
   </logicalFolder>
   <sourceRootList>
-    <Elem>.</Elem>
+    <Elem>../..</Elem>
   </sourceRootList>
   <projectmakefile>Makefile</projectmakefile>
   <confs>

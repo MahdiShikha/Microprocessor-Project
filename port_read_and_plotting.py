@@ -101,6 +101,12 @@ def main():
 
     except KeyboardInterrupt:
         print("\nStopping logging.")
+        plt.figure()
+        plt.plot(ykarr)
+        plt.show()
+        plt.figure()
+        plt.plot(dcontarr)
+        plt.show()
 
         ser.close
         while sample_idx > NUM_SAMPLES:
