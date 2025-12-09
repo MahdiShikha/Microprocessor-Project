@@ -1,117 +1,94 @@
 """
-log_adc_ramp.py
-
-Requires:
-    conda install -c anaconda pyserial matplotlib
-
-Frame from model PIC (UART1):
-    [0xAA][ADRESH][ADRESL]
-Result is 12-bit, right-justified:
-    adc_12 = ((ADRESH & 0x0F) << 8) | ADRESL
+Make sure pyserial is installed on anacodna environment,
+conda install -c anaconda pyserial
 """
 
+"""
+Code logic:
+
+Read bytes from the serial port
+Decode them into a value
+Append to a Python list (for plotting)
+Write the same value as a row into the CSV
+Update the plot every few samples
+Stops after a set amount of samples have been read or a keyboard interrupt
+
+Frame format (7 bytes in total):
+[0xFF][0xFF][MODE][D_ctrl_H][D_ctrl_L][YkH][YkL]
+"""
 import csv
 import time
 import serial
-from serial.tools import list_ports
 import matplotlib.pyplot as plt
+from serial.tools import list_ports
+import numpy as np
 
-PORT = "COM4"        # adjust as needed
+
+PORT = "COM4"
 BAUD = 9600
-NUM_SAMPLES = 4096   # one full 0..4095 sweep (assuming controller ramp runs once)
-
+NUM_SAMPLES = 100000
 
 def list_serial_ports():
+    ports = list_ports.comports()
     print("Available serial ports:")
-    for p in list_ports.comports():
-        print(f"  {p.device}: {p.description}")
-
-
-def read_one_adc_sample(ser):
-    """
-    Wait for header 0xAA, then read ADRESH and ADRESL.
-    Return decoded 12-bit ADC value, or None if something goes wrong.
-    """
-    # sync on header
-    while True:
-        b = ser.read(1)
-        if len(b) == 0:
-            # timeout – keep looking
-            continue
-        if b[0] == 0xAA:
-            break
-
-    # now read the two data bytes
-    frame = ser.read(2)
-    if len(frame) < 2:
-        return None
-
-    adresh = frame[0]
-    adresl = frame[1]
-
-    # 12-bit right-justified in ADRESH:ADRESL
-    value_12 = ((adresh & 0x0F) << 8) | adresl
-    return value_12
-
+    for port in ports:
+        print(f"{port.device}: {port.description}")
+        # p.device is like "COM4" on Windows, "/dev/ttyUSB0" on Linux, etc.
 
 def main():
-    list_serial_ports()
-
-    base = input("Output CSV filename (without .csv): ").strip()
+    # --- Ask for filename ---
+    base = input("Output CSV filename: ").strip()
     if not base:
-        base = "adc_ramp"
+        base = "uart_log"
     filename = base + ".csv"
 
-    ser = serial.Serial(
-        PORT,
-        BAUD,
-        timeout=2.0,
-        bytesize=serial.EIGHTBITS,
-        parity=serial.PARITY_NONE,
-        stopbits=serial.STOPBITS_ONE,
-    )
-    ser.reset_input_buffer()
-    print(f"Opened {PORT} at {BAUD} baud")
-    print(f"Logging {NUM_SAMPLES} samples to {filename}")
+    # --- Open serial ---
+    ser = serial.Serial(PORT, BAUD, timeout=10.0)
+    ser.reset_input_buffer()  # flush any old junk
 
-    xs_expected = []
-    ys_adc = []
+    # --- Prepare CSV ---
+    #f = open(filename, "w", newline="")
+    #writer = csv.writer(f)
+    #writer.writerow(["sample", "timestamp_s", "D_ctrl_12bit", "Yk_12bit"])
 
+
+    xs = []
+    ys_Yk = []          # store Yk for plotting
+    ys_Dctrl = []       # store D_ctrl for plotting
+    sample_idx = 0
     t0 = time.time()
 
-    with open(filename, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["index", "timestamp_s", "expected_code", "adc_code_12bit"])
+    print("Logging + plotting. Press Ctrl+C to stop.")
+    print("Expecting frames: 0xFF 0xFF MODE D_H D_L Y_H Y_L")
 
-        for idx in range(NUM_SAMPLES):
-            while True:
-                val = read_one_adc_sample(ser)
-                if val is not None:
-                    break
+    try:    #FRAMES: 0xFF [adresh][adresL]
+        N = 100000
+        adc_arr = np.zeros(N)
+        for i in range(N):
+            while not ser.read(1)==b'\xff':
+                pass
+            adc_bytes = ser.read(2)
+            adc_val = adc_bytes[0] * 256 + adc_bytes[1]
+            adc_arr[i] = adc_val
+            print(f"{adc_val}")
+            # print(f'{yk}, {dcont}')
+            # print(f"{hex(byte[0])}, {byte}")
+        print(adc_arr)
+        plt.figure()
+        plt.plot(adc_arr)
+        plt.show()
+    except KeyboardInterrupt:
+        print("\nStopping logging.")
 
-            ts = time.time() - t0
-            expected_code = idx  # since controller PIC ramps 0..4095
+        ser.close
+        
 
-            writer.writerow([idx, f"{ts:.6f}", expected_code, val])
-
-            xs_expected.append(expected_code)
-            ys_adc.append(val)
-
-            if idx % 256 == 0:
-                print(f"{idx:4d}: expected {expected_code:4d}, ADC {val:4d}")
-
-    ser.close()
-    print("Done, port closed.")
-
-    # quick sanity plot: ADC vs expected DAC code
-    plt.figure()
-    plt.plot(xs_expected, ys_adc, ".", markersize=2)
-    plt.xlabel("Expected DAC code (0..4095)")
-    plt.ylabel("Measured ADC code (12-bit)")
-    plt.title("ADC vs expected DAC code")
-    plt.grid(True)
-    plt.show()
+    finally:
+        #f.close()
+        ser.close()
+        plt.show()  # keep final plot on screen
 
 
 if __name__ == "__main__":
+    list_serial_ports()
     main()
