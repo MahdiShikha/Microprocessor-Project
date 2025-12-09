@@ -67,7 +67,7 @@ setup:
         ;    >>> Change these two lines to change Ts <<<
         movlw   0xF8
         movwf   TMR0H, A
-        movlw   0x10
+        movlw   0x30
         movwf   TMR0L, A
 
         ; 5) T0CON: same style as controller branch
@@ -131,7 +131,7 @@ Timer_Int_Hi:
         ;----------------------------------
         movlw   0xF8
         movwf   TMR0H, A
-        movlw   0x10
+        movlw   0x30
         movwf   TMR0L, A
 
         ;----------------------------------

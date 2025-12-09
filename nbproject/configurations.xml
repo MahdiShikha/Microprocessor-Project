@@ -17,15 +17,16 @@
     <logicalFolder name="SourceFiles"
                    displayName="Source Files"
                    projectFiles="true">
-      <itemPath>config.s</itemPath>
-      <itemPath>LCD.s</itemPath>
-      <itemPath>Mul.s</itemPath>
-      <itemPath>modelplant.s</itemPath>
       <itemPath>ADC.s</itemPath>
-      <itemPath>FP_LUT.inc</itemPath>
+      <itemPath>README.md</itemPath>
+      <itemPath>config.s</itemPath>
+      <itemPath>port_read_and_plotting.py</itemPath>
       <itemPath>12Bit_to_10.s</itemPath>
-      <itemPath>main_plant.s</itemPath>
+      <itemPath>FP_LUT.inc</itemPath>
+      <itemPath>Mul.s</itemPath>
       <itemPath>UART_plant.s</itemPath>
+      <itemPath>main_plant.s</itemPath>
+      <itemPath>modelplant.s</itemPath>
     </logicalFolder>
   </logicalFolder>
   <sourceRootList>
@@ -74,22 +75,6 @@
         <makeCustomizationEnableLongLines>false</makeCustomizationEnableLongLines>
         <makeCustomizationNormalizeHexFile>false</makeCustomizationNormalizeHexFile>
       </makeCustomizationType>
-      <item path="LCD.s" ex="false" overriding="false">
-        <pic-as-assembler>
-        </pic-as-assembler>
-        <pic-as-global>
-        </pic-as-global>
-        <pic-as-linker>
-        </pic-as-linker>
-      </item>
-      <item path="Mul.s" ex="false" overriding="false">
-        <pic-as-assembler>
-        </pic-as-assembler>
-        <pic-as-global>
-        </pic-as-global>
-        <pic-as-linker>
-        </pic-as-linker>
-      </item>
       <Simulator>
         <property key="codecoverage.enabled" value="Disable"/>
         <property key="codecoverage.enableoutputtofile" value="false"/>
@@ -1104,14 +1089,6 @@
                   value=""/>
         <property key="warningmessagebreakoptions.warningmessages" value="holdstate"/>
       </Tool>
-      <item path="UART_plant.s" ex="false" overriding="false">
-        <pic-as-assembler>
-        </pic-as-assembler>
-        <pic-as-global>
-        </pic-as-global>
-        <pic-as-linker>
-        </pic-as-linker>
-      </item>
       <pic-as-assembler>
         <property key="fmax-errors" value="20"/>
         <property key="list-custom-assembler-options" value=""/>
