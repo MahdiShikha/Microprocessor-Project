@@ -49,7 +49,7 @@ def main():
     # --- Prepare CSV ---
     f = open(filename, "w", newline="")
     writer = csv.writer(f)
-    writer.writerow(["sample", "timestamp_s", "D_ctrl_12bit", "Yk_12bit"])
+    writer.writerow(["sample", "D_ctrl_12bit", "Yk_12bit"])
 
     # --- Prepare plot (plotting Yk and D_ctrl vs sample index) ---
     plt.ion()
@@ -73,6 +73,8 @@ def main():
     ys_Dctrl = []       # store D_ctrl for plotting
     sample_idx = 0
     t0 = time.time()
+    t =[]
+    num_collected = 0
 
     print("Logging + plotting. Press Ctrl+C to stop.")
     print("Expecting frames: 0xFF 0xFF MODE D_H D_L Y_H Y_L")
@@ -92,6 +94,8 @@ def main():
             dcontarr[i] = dcont
             # print(f'{yk}, {dcont}')
             # print(f"{hex(byte[0])}, {byte}")
+
+            num_collected += num_collected
         plt.figure()
         plt.plot(ykarr)
         plt.show()
@@ -107,70 +111,16 @@ def main():
         plt.figure()
         plt.plot(dcontarr)
         plt.show()
-
         ser.close
-        while sample_idx > NUM_SAMPLES:
-            
-
-            # --- 1) Find 2-byte header 0xFF 0xFF --- 
-            #sliding window method
-            prev = None
-            while True:
-                b = ser.read(1)
-                if len(b) == 0:
-                    # timeout, keep trying
-                    continue
-                if b[0] == 0xFF:
-                #byte = b[0]
-                #if prev == 0xFF and byte == 0xFF:
-                    # Found header
-                    break
-
-                #prev = byte
-
-            # --- 2) Read the rest of the frame: MODE, D_H, D_L, Y_H, Y_L ---
-            frame = ser.read(4)
-            if len(frame) < 4:
-                # incomplete frame (timeout), restart header search
-                continue
-
-            #mode      = frame[0]
-            D_ctrl_H  = frame[2]
-            D_ctrl_L  = frame[3]
-            YkH       = frame[0]
-            YkL       = frame[1]
-
-            # 12-bit combine (upper nibble from *_H)
-            D_ctrl = (D_ctrl_H  << 8) | D_ctrl_L
-            Yk     = ((YkH      & 0x0F) << 8) | YkL
-
-            ts = time.time() - t0
-            sample_idx += 1
-
-            # store for plot (Yk)
-            xs.append(sample_idx)
-            ys_Yk.append(Yk)
-            ys_Dctrl.append(D_ctrl)
-
-            # write to CSV
-            writer.writerow([sample_idx, f"{ts:.6f}", D_ctrl, Yk])
-            print(f"{sample_idx:6d}: 0x{YkH:02X} 0x{YkL:02X} -> {Yk:5d}")
-            print(f"{sample_idx:6d}: 0x{D_ctrl_H:02X} 0x{D_ctrl_L:02X} -> {D_ctrl:5d}")   
-
-            # update plot every N samples (e.g. every 10)
-            if sample_idx % 10 == 0:
-                line_Yk.set_data(xs, ys_Yk)
-                line_Dctr.set_data(xs, ys_Dctrl)
-                ax1.relim()
-                ax1.autoscale_view()
-                ax2.relim()
-                ax2.autoscale_view()
-                plt.pause(0.001)
+        
+    
 
     except KeyboardInterrupt:
         print("\nStopping logging.")
 
     finally:
+        for i in range(num_collected):
+            writer.writerow([i,int(dcontarr[i]),int(ykarr[i])])
         f.close()
         ser.close()
         plt.ioff()
