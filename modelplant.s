@@ -80,12 +80,12 @@ Rand:           ds  1      ; 8-bit pseudo-random state
 ;   0x01 = +1
 ;   0xFF = -1
 NoiseTable_Y:
-        db  1      ; 0: 0
-        db   1      ; 1: +1
+        db  0      ; 0: 0
+        db   -1      ; 1: +1
         db   0      ; 2:  0
         db   0      ; 3:  0
-        db  1      ; 4: -1
-        db   0      ; 5: +1
+        db  -1      ; 4: -1
+        db   1      ; 5: +1
         db   0      ; 6:  0
         db   1      ; 7: +1
 
@@ -93,12 +93,12 @@ NoiseTable_Y:
 ; index = Rand & 0x07
 ; small signed steps for drift random walk
 NoiseTable_D:
-        db   0      ; 0: +1
-        db  0      ; 1: -1
-        db   0      ; 2: +1
+        db   1      ; 0: +1
+        db  -1      ; 1: -1
+        db   1      ; 2: +1
         db   0      ; 3:  0
-        db  0      ; 4: -1
-        db   0      ; 5: +1
+        db  -1      ; 4: -1
+        db   1      ; 5: +1
         db   0      ; 6:  0
         db   0      ; 7:  0
 
@@ -117,7 +117,7 @@ Init_Model:
         movlw   1
         movwf   AlphaNum, A      ; M = 1
 
-        movlw   1
+        movlw   0
         movwf   AlphaShift, A    ; S = 0 -> >>0
 
         ; drift state = 0
@@ -125,12 +125,12 @@ Init_Model:
         clrf    dH, A
 
         ; drift speed = +1 index per update
-        movlw   0
+        movlw   1
         movwf   DriftSpeedL, A
         clrf    DriftSpeedH, A
 
         ; Drift: update roughly every 50 cycles
-        movlw   100000000000000
+        movlw   50
         movwf   DriftDiv, A
         clrf    DriftTick, A
 
