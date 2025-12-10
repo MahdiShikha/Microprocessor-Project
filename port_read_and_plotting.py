@@ -14,7 +14,7 @@ Update the plot every few samples
 Stops after a set amount of samples have been read or a keyboard interrupt
 
 Frame format (7 bytes in total):
-[0xFF][0xFF][MODE][D_ctrl_H][D_ctrl_L][YkH][YkL]
+[0xFF][YkH][YkL][D_ctrl_H][D_ctrl_L]
 """
 import csv
 import time
@@ -51,38 +51,15 @@ def main():
     writer = csv.writer(f)
     writer.writerow(["sample", "D_ctrl_12bit", "Yk_12bit"])
 
-    # --- Prepare plot (plotting Yk and D_ctrl vs sample index) ---
-    plt.ion()
-    fig1, ax1 = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    line_Yk,   = ax1.plot([], [], marker=".", linestyle="-", label="Yk")
-    line_Dctr, = ax2.plot([], [], marker=".", linestyle="--", label="D_ctrl")
-    ax1.set_xlabel("Sample index")
-    ax1.set_ylabel("Value (12-bit)")
-    ax1.set_title("Live UART data")
-    ax1.legend()
-    ax2.set_xlabel("Sample index")
-    ax2.set_ylabel("Value (16-bit)")
-    ax2.set_title("Live UART data")
-    ax2.legend()
-
-
-
-    xs = []
-    ys_Yk = []          # store Yk for plotting
-    ys_Dctrl = []       # store D_ctrl for plotting
-    sample_idx = 0
-    t0 = time.time()
-    t =[]
-    num_collected = 0
 
     print("Logging + plotting. Press Ctrl+C to stop.")
-    print("Expecting frames: 0xFF 0xFF MODE D_H D_L Y_H Y_L")
+    print("Expecting frames: 0xFF Y_H Y_L D_H D_L")
 
     try:
         N = 50000
         ykarr = np.zeros(N)
         dcontarr = np.zeros(N)
+        num_collected = 0
         for i in range(N):
             while not ser.read(1)==b'\xff':
                 pass
@@ -95,32 +72,43 @@ def main():
             # print(f'{yk}, {dcont}')
             # print(f"{hex(byte[0])}, {byte}")
 
-            num_collected += num_collected
+            num_collected += 1
         plt.figure()
-        plt.plot(ykarr)
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (12bit)")
+        plt.plot(ykarr,label="Yk Value")
+        plt.legend()
         plt.show()
         plt.figure()
-        plt.plot(dcontarr)
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (16bit)")
+        plt.plot(dcontarr, label="Dctrl Value")
+        plt.legend
         plt.show()
+        ser.close
 
     except KeyboardInterrupt:
         print("\nStopping logging.")
         plt.figure()
-        plt.plot(ykarr)
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (12bit)")
+        plt.plot(ykarr,label="Yk Value")
+        plt.legend()
         plt.show()
         plt.figure()
-        plt.plot(dcontarr)
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (16bit)")
+        plt.plot(dcontarr, label="Dctrl Value")
+        plt.legend
         plt.show()
         ser.close
         
-    
-
-    except KeyboardInterrupt:
-        print("\nStopping logging.")
 
     finally:
+        print(f"{ykarr}")
+        print(f"{dcontarr}")
         for i in range(num_collected):
-            writer.writerow([i,int(dcontarr[i]),int(ykarr[i])])
+            writer.writerow([i,dcontarr[i],ykarr[i]])
         f.close()
         ser.close()
         plt.ioff()
