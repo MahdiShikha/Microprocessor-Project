@@ -9,13 +9,12 @@ Code logic:
 
 Read bytes from the serial port
 Decode them into a value
-Append to a Python list (for plotting)
-Write the same value as a row into the CSV
-Update the plot every few samples
+Append to an array
 Stops after a set amount of samples have been read or a keyboard interrupt
+Write array values to csv
 
-Frame format (7 bytes in total):
-[0xFF][0xFF][MODE][D_ctrl_H][D_ctrl_L][YkH][YkL]
+Frame format (3 bytes in total):
+[0xFF][ADRESH][ADRESL]
 """
 import csv
 import time
@@ -50,37 +49,18 @@ def main():
     # --- Prepare CSV ---
     f = open(filename, "w", newline="")
     writer = csv.writer(f)
-    writer.writerow(["sample", "timestamp_s", "D_ctrl_12bit", "Yk_12bit"])
+    writer.writerow(["sample", "ADC_Value"])
 
-    # --- Prepare plot (plotting Yk and D_ctrl vs sample index) ---
-    plt.ion()
-    fig1, ax1 = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    line_Yk,   = ax1.plot([], [], marker=".", linestyle="-", label="Yk")
-    line_Dctr, = ax2.plot([], [], marker=".", linestyle="--", label="D_ctrl")
-    ax1.set_xlabel("Sample index")
-    ax1.set_ylabel("Value (12-bit)")
-    ax1.set_title("Live UART data")
-    ax1.legend()
-    ax2.set_xlabel("Sample index")
-    ax2.set_ylabel("Value (16-bit)")
-    ax2.set_title("Live UART data")
-    ax2.legend()
-
-
-
-    xs = []
-    ys_Yk = []          # store Yk for plotting
-    ys_Dctrl = []       # store D_ctrl for plotting
     sample_idx = 0
     t0 = time.time()
 
     print("Logging + plotting. Press Ctrl+C to stop.")
-    print("Expecting frames: 0xFF 0xFF MODE D_H D_L Y_H Y_L")
+    print("Expecting frames: 0xFF ADRESH ADRESL")
 
     try:    #FRAMES: 0xFF [adresh][adresL]
         N = 50000
         adc_arr = np.zeros(N)
+        num_collected = 0
         for i in range(N):
             while not ser.read(1)==b'\xff':
                 pass
@@ -88,86 +68,35 @@ def main():
             adc_val = adc_bytes[0] * 256 + adc_bytes[1]
             adc_arr[i] = adc_val
             print(f"{adc_val}")
+            num_collected += 1
             # print(f'{yk}, {dcont}')
             # print(f"{hex(byte[0])}, {byte}")
         print(adc_arr)
         plt.figure()
-        plt.plot(adc_arr)
+        plt.plot(adc_arr, label="ADC Values")
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (12bit)")
+        plt.legend()
         plt.show()
-    except KeyboardInterrupt:
-        print("\nStopping logging.")
-
-        ser.close()
-
-    except KeyboardInterrupt:
-        print("\nStopping logging.")
-
         ser.close
-        while sample_idx > NUM_SAMPLES:
-            
-
-            # --- 1) Find 2-byte header 0xFF 0xFF --- 
-            #sliding window method
-            prev = None
-            while True:
-                b = ser.read(1)
-                if len(b) == 0:
-                    # timeout, keep trying
-                    continue
-                if b[0] == 0xFF:
-                #byte = b[0]
-                #if prev == 0xFF and byte == 0xFF:
-                    # Found header
-                    break
-
-                #prev = byte
-
-            # --- 2) Read the rest of the frame: MODE, D_H, D_L, Y_H, Y_L ---
-            frame = ser.read(4)
-            if len(frame) < 4:
-                # incomplete frame (timeout), restart header search
-                continue
-
-            #mode      = frame[0]
-            D_ctrl_H  = frame[2]
-            D_ctrl_L  = frame[3]
-            YkH       = frame[0]
-            YkL       = frame[1]
-
-            # 12-bit combine (upper nibble from *_H)
-            D_ctrl = (D_ctrl_H  << 8) | D_ctrl_L
-            Yk     = ((YkH      & 0x0F) << 8) | YkL
-
-            ts = time.time() - t0
-            sample_idx += 1
-
-            # store for plot (Yk)
-            xs.append(sample_idx)
-            ys_Yk.append(Yk)
-            ys_Dctrl.append(D_ctrl)
-
-            # write to CSV
-            writer.writerow([sample_idx, f"{ts:.6f}", D_ctrl, Yk])
-            print(f"{sample_idx:6d}: 0x{YkH:02X} 0x{YkL:02X} -> {Yk:5d}")
-            print(f"{sample_idx:6d}: 0x{D_ctrl_H:02X} 0x{D_ctrl_L:02X} -> {D_ctrl:5d}")   
-
-            # update plot every N samples (e.g. every 10)
-            if sample_idx % 10 == 0:
-                line_Yk.set_data(xs, ys_Yk)
-                line_Dctr.set_data(xs, ys_Dctrl)
-                ax1.relim()
-                ax1.autoscale_view()
-                ax2.relim()
-                ax2.autoscale_view()
-                plt.pause(0.001)
 
     except KeyboardInterrupt:
         print("\nStopping logging.")
-
+        
+        print(adc_arr)
+        plt.figure()
+        plt.plot(adc_arr, label="ADC Values")
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (12bit)")
+        plt.legend()
+        plt.show()
+        ser.close
+        
     finally:
+        for i in range(num_collected):
+            writer.writerow([i, adc_arr[i]])
         f.close()
         ser.close()
-        plt.ioff()
         plt.show()  # keep final plot on screen
 
 
