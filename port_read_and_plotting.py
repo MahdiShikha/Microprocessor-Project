@@ -80,7 +80,7 @@ def main():
     print("Expecting frames: 0xFF 0xFF MODE D_H D_L Y_H Y_L")
 
     try:
-        N = 50000
+        N = 10000
         ykarr = np.zeros(N)
         dcontarr = np.zeros(N)
         for i in range(N):
