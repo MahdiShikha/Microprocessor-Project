@@ -6,40 +6,25 @@
 
 #include <xc.inc>
 
-
-
 ; ---- extern symbols ----
 
 extrn  DAC_Setup
-
 extrn  Timer_Int_Hi
 
-
-
 extrn  UART1_Setup
-
 extrn  UART1_Receive_12bit
-
 extrn  UART1_Transmit_Byte
-
 extrn  UART1_H, UART1_L
 
 
-
 extrn  Init_Controller
-
 extrn  YkL, YkH
-
 extrn  CtrlMode
-
 extrn  D_prevL, D_prevH     ; from controller_A.s
-
-
 
 ; ---------------- CODE ----------------
 
 psect   resetVec, class=CODE, abs
-
 resetVec:
 
         org     0x0000
@@ -56,8 +41,6 @@ highIntVec:
 
         goto    Timer_Int_Hi
 
-
-
 ;-------------------------------
 
 ; main entry
@@ -65,8 +48,6 @@ highIntVec:
 ;-------------------------------
 
 psect   main_code, class=CODE
-
-
 
 start:
 

@@ -1,4 +1,4 @@
-========================================================
+;========================================================
 ;  controller_A.s ? FSM + SCAN + PI LOCK + BODE (locked)
 ;========================================================
 
@@ -129,10 +129,10 @@ LOCK_MEAS       equ 2         ; measure slope sign
 LOCK_TRACK      equ 3         ; normal PI tracking
 
 ; probe step in D_ctrl units (small nudge)
-PROBE_STEP      equ 16
+PROBE_STEP      equ 32
 
 ; band around Y_target to "capture" lock point: |Y - Y_target| <= BAND
-LOCK_CATCH_BAND equ 2
+LOCK_CATCH_BAND equ 5
 
 ; error threshold to declare lost lock: |Err| > LOST_ERR_THRESH
 LOST_ERR_THRESH equ 50
@@ -190,9 +190,9 @@ Init_Controller:
         clrf    Y_lockBaseH, A
 
         ; Y_target initial value (example)
-        movlw   0xCE
+        movlw   0x3E
         movwf   Y_targetL, A
-        movlw   0x02
+        movlw   0x01
         movwf   Y_targetH, A
 
         ; Kp, Ki
@@ -201,9 +201,9 @@ Init_Controller:
         movlw   0
         movwf   KpShift, A
 
-        movlw   1
+        movlw   3
         movwf   KiNum, A
-        movlw   4
+        movlw   1
         movwf   KiShift, A
 
         ; RJ0 = button input, RH0..2 = mode LEDs
@@ -239,7 +239,6 @@ Controller_Step:
         movff   D_ctrlH, D_prevH    
      
         call    UpdateModeFromButton
-??????
         movf    CtrlMode, W, A
         xorlw   STATE_SCAN
         btfsc   STATUS, 2, A
@@ -293,6 +292,9 @@ CS_Scan_Done:
 
 ;--------------------------------------------------------
 ; CS_DoLock ? LOCK mode with internal sub-states
+;   Here we only use:
+;     LOCK_SEARCH : scan D_ctrl from 0..Dmax until Yk >= Y_target
+;     LOCK_TRACK  : hold D_ctrl at D_base (debug version)
 ;--------------------------------------------------------
 CS_DoLock:
         movf    LockState, W, A
@@ -300,104 +302,62 @@ CS_DoLock:
         btfsc   STATUS, 2, A
         bra     CDL_Search
 
-        movf    LockState, W, A
-        xorlw   LOCK_PROBE
-        btfsc   STATUS, 2, A
-        bra     CDL_Probe
-
-        movf    LockState, W, A
-        xorlw   LOCK_MEAS
-        btfsc   STATUS, 2, A
-        bra     CDL_Meas
-
         ; otherwise: TRACK
         bra     CDL_Track
 
-
-;---------------- LOCK_SEARCH: sweep D_ctrl until near Y_target -----
+;---------------- LOCK_SEARCH (simplified, LEFT-slope only) ----------
+; Sweep D_ctrl from 0..Dmax until Yk >= Y_target  (unsigned 16-bit)
+;--------------------------------------------------------------------
 CDL_Search:
-        ; diff = Y_target - Yk  -> TmpH:TmpL (signed 16-bit)
+        ; Compute diff = Y_target - Yk  (unsigned 16-bit)
+        ; If C=1 after the subtraction, then Y_target >= Yk
+        ; If C=0, then Y_target <  Yk  -> we have reached / passed target.
+
         movf    YkL, W, A
-        subwf   Y_targetL, W, A
-        movwf   TmpL, A
-
+        subwf   Y_targetL, W, A   ; W = Y_targetL - YkL
         movf    YkH, W, A
-        subwfb  Y_targetH, W, A
-        movwf   TmpH, A
+        subwfb  Y_targetH, W, A   ; W = Y_targetH - YkH
 
-        ; |diff| -> TmpH:TmpL (absolute value)
-        movf    TmpH, W, A
-        andlw   0x80           ; test sign bit
-        btfsc   STATUS, 2, A   ; Z==1 ? sign bit=0 ? diff >= 0
-        bra     CDL_SearchAbsDone
+        btfsc   STATUS, 0, A      ; C=1 -> Y_target >= Yk  (not reached)
+        bra     CDL_Search_IncD
 
-        ; negative -> two's complement: Tmp = -Tmp
-        comf    TmpL, F, A
-        comf    TmpH, F, A
-        incf    TmpL, F, A
-        movf    TmpL, W, A
-        addwfc  TmpH, F, A
+        ; ---------- captured: Yk >= Y_target ----------
+        ; Store base point D_base and Y at base
+        movff   D_ctrlL, D_baseL
+        movff   D_ctrlH, D_baseH
 
-CDL_SearchAbsDone:
-        ; *** FIX 1: correct capture condition for |diff| ? LOCK_CATCH_BAND ***
-        ; Now TmpH:TmpL = |Y_target - Yk|
-        ; Compute Result = |diff| - LOCK_CATCH_BAND
-        movlw   low(LOCK_CATCH_BAND)
-        subwf   TmpL, W, A
-        movlw   high(LOCK_CATCH_BAND)
-        subwfb  TmpH, W, A
+        movff   YkL,   Y_lockBaseL
+        movff   YkH,   Y_lockBaseH
 
-        ; We want to capture when |diff| <= BAND.
-        ; After subtraction:
-        ;   Z=1 ? |diff| == BAND
-        ;   C=0 ? |diff| <  BAND (borrow)
-        ;   C=1 & Z=0 ? |diff| >  BAND
+        ; Clear integral term
+        clrf    IntL, A
+        clrf    IntH, A
 
-        ; case1: equal ? capture
-        btfsc   STATUS, 2, A       ; Z bit
-        bra     CDL_SearchCaptured
+        ; Next state: TRACK
+        movlw   LOCK_TRACK
+        movwf   LockState, A
+        return
 
-        ; case2: smaller ? capture
-        btfss   STATUS, 0, A       ; C bit
-        bra     CDL_SearchCaptured
-
-        ; else |diff| > BAND ? keep sweeping D_ctrl (step = +1)
+CDL_Search_IncD:
+        ; Not yet reached target -> D_ctrl = D_ctrl + 1
         incf    D_ctrlL, F, A
         btfsc   STATUS, 0, A
         incf    D_ctrlH, F, A
 
-        ; wrap if D_ctrl > Dmax
+        ; Wrap if D_ctrl > Dmax
         movf    D_ctrlL, W, A
         subwf   DmaxL, W, A
         movf    D_ctrlH, W, A
         subwfb  DmaxH, W, A
-        btfsc   STATUS, 0, A
-        bra     CDL_SearchDone   ; Dmax >= D_ctrl ? OK
+        btfsc   STATUS, 0, A      ; C=1 -> Dmax >= D_ctrl
+        bra     CDL_SearchDone
 
-        ; wrap to zero
+        ; wrap to 0
         clrf    D_ctrlL, A
         clrf    D_ctrlH, A
 
 CDL_SearchDone:
         return
-
-CDL_SearchCaptured:
-        ; store base point (D_base) and Y at base (Y_lockBase)
-        movff   D_ctrlL, D_baseL
-        movff   D_ctrlH, D_baseH
-
-        movff   YkL, Y_lockBaseL
-        movff   YkH, Y_lockBaseH
-
-        ; clear integral
-        clrf    IntL, A
-        clrf    IntH, A
-
-        ; next state: PROBE
-        movlw   LOCK_PROBE
-        movwf   LockState, A
-        return
-
 
 ;---------------- LOCK_PROBE: D_ctrl = D_base + PROBE_STEP ----------
 CDL_Probe:
@@ -468,41 +428,36 @@ CDL_SlopeDone:
         return
 
 
-;---------------- LOCK_TRACK: PI + lost-lock detection --------------
+;---------------- LOCK_TRACK: PI control around D_base ----------------
+; In TRACK:
+;   Err = Y_target - Yk         (signed 16-bit)
+;   Pterm = Kp * Err            (Scale_Err_Kp)
+;   Iinc  = Ki * Err, Int += Iinc
+;   Corr  = Pterm + Int         (signed 16-bit)
+;   D_ctrl = D_base + Corr      (with saturation 0..0xFFFF)
+;--------------------------------------------------------------------
 CDL_Track:
-        ; 1) Err_raw = Y_target - Yk
+        ; 1) Err = Y_target - Yk  (signed 16-bit)
         movff   Y_targetL, ErrL
         movff   Y_targetH, ErrH
 
         movf    YkL, W, A
-        subwf   ErrL, F, A
+        subwf   ErrL, F, A      ; ErrL = Y_targetL - YkL
         movf    YkH, W, A
-        subwfb  ErrH, F, A
+        subwfb  ErrH, F, A      ; ErrH = Y_targetH - YkH - borrow
 
-        ; 2) If RIGHT slope -> Err = -Err_raw
-        movf    LockSide, W, A
-        btfsc   STATUS, 2, A
-        bra     CDL_ErrSignDone  ; LockSide==0 (LEFT) -> keep sign
-
-        ; RIGHT slope (LockSide!=0) -> two's complement
-        comf    ErrL, F, A
-        comf    ErrH, F, A
-        incf    ErrL, F, A
-        movf    ErrL, W, A
-        addwfc  ErrH, F, A
-
-CDL_ErrSignDone:
-        ; 3) Pterm = Kp * Err
+        ; 2) Pterm = Kp * Err   (signed)
         call    Scale_Err_Kp
 
-        ; 4) Iinc = Ki * Err, Int += Iinc
+        ; 3) Iinc = Ki * Err, Int += Iinc   (signed)
         call    Scale_Err_Ki
+
         movf    IincL, W, A
         addwf   IntL, F, A
         movf    IincH, W, A
         addwfc  IntH, F, A
 
-        ; 5) Corr = Pterm + Int
+        ; 4) Corr = Pterm + Int (signed)
         movff   PtermL, CorrL
         movff   PtermH, CorrH
 
@@ -511,24 +466,23 @@ CDL_ErrSignDone:
         movf    IntH, W, A
         addwfc  CorrH, F, A
 
-        ; 6) D_ctrl = D_base + Corr, saturate to 0..0xFFFF
+        ; 5) D_ctrl = D_base + Corr, saturate to 0..0xFFFF
         movff   D_baseL, D_ctrlL
         movff   D_baseH, D_ctrlH
 
         bcf     STATUS, 0, A      ; C = 0 before add
-
         movf    CorrL, W, A
         addwf   D_ctrlL, F, A
         movf    CorrH, W, A
         addwfc  D_ctrlH, F, A
 
-        ; negative -> clamp to 0
+        ; If result is negative (sign bit=1) -> clamp to 0
         movf    D_ctrlH, W, A
         andlw   0x80
         btfss   STATUS, 2, A
         bra     PI_Clamp_Zero_Track
 
-        ; overflow (carry) -> clamp to max
+        ; If carry=1 after high-byte add -> overflow -> clamp to max
         btfsc   STATUS, 0, A
         bra     PI_Clamp_High_Track
 
@@ -546,53 +500,7 @@ PI_Clamp_Zero_Track:
         clrf    D_ctrlH, A
 
 PI_Done_Track:
-        ; 7) lost-lock detection: |Err| > LOST_ERR_THRESH ?
-        movff   ErrL, TmpL
-        movff   ErrH, TmpH
-
-        ; |Err| into TmpH:TmpL
-        movf    TmpH, W, A
-        andlw   0x80
-        btfsc   STATUS, 2, A
-        bra     CDL_AbsErrDone
-
-        comf    TmpL, F, A
-        comf    TmpH, F, A
-        incf    TmpL, F, A
-        movf    TmpL, W, A
-        addwfc  TmpH, F, A
-
-CDL_AbsErrDone:
-        ; *** FIX 3: correct lost-lock condition for |Err| > LOST_ERR_THRESH ***
-        ; Compute Result = |Err| - LOST_ERR_THRESH
-        movlw   low(LOST_ERR_THRESH)
-        subwf   TmpL, W, A
-        movlw   high(LOST_ERR_THRESH)
-        subwfb  TmpH, W, A
-
-        ; We want to stay locked when |Err| <= threshold.
-        ; After subtraction:
-        ;   Z=1 ? |Err| == threshold
-        ;   C=0 ? |Err| <  threshold
-        ;   C=1 & Z=0 ? |Err| >  threshold
-
-        ; case1: equal ? still locked
-        btfsc   STATUS, 2, A
-        bra     CDL_TrackDone
-
-        ; case2: smaller ? still locked
-        btfss   STATUS, 0, A
-        bra     CDL_TrackDone
-
-        ; else |Err| > threshold ? lost lock -> back to SEARCH
-        movlw   LOCK_SEARCH
-        movwf   LockState, A
-        clrf    IntL, A
-        clrf    IntH, A
-
-CDL_TrackDone:
         return
-
 
 ;--------------------------------------------------------
 ; CS_InitBode
@@ -748,11 +656,12 @@ UMB_CheckLock:
         btfss   STATUS, 2, A
         bra     UMB_CheckBode
 
-        ; *** FIX 4: entering LOCK: start SEARCH from D_ctrl = 0 ***
-        ; - Keep Y_target as set
-        ; - Reset D_ctrl and D_base to 0
-        ; - Clear integral
-        ; - Set LockState = SEARCH
+        ; ---------- ENTERING LOCK (simplified DC-lock) ----------
+        ; - Start LOCK_SEARCH from D_ctrl = 0
+        ; - Clear D_base and integral
+        ; - Assume LEFT slope (LockSide=0)
+        ; - Set LockState = LOCK_SEARCH
+
         clrf    D_ctrlL, A
         clrf    D_ctrlH, A
 
@@ -762,11 +671,13 @@ UMB_CheckLock:
         clrf    IntL, A
         clrf    IntH, A
 
+        clrf    LockSide, A      ; 0 = LEFT (we never probe/measure now)
+
         movlw   LOCK_SEARCH
         movwf   LockState, A
-        clrf    LockSide, A
 
         bra     UMB_UpdateLED
+
 
 UMB_CheckBode:
         movf    CtrlMode, W, A
