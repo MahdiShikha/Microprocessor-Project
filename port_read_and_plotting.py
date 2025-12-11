@@ -9,13 +9,12 @@ Code logic:
 
 Read bytes from the serial port
 Decode them into a value
-Append to a Python list (for plotting)
-Write the same value as a row into the CSV
-Update the plot every few samples
+Append to an array
 Stops after a set amount of samples have been read or a keyboard interrupt
+Write array values to csv
 
-Frame format (7 bytes in total):
-[0xFF][0xFF][MODE][D_ctrl_H][D_ctrl_L][YkH][YkL]
+Frame format (3 bytes in total):
+[0xFF][ADRESH][ADRESL]
 """
 import csv
 import time
@@ -50,17 +49,18 @@ def main():
     # --- Prepare CSV ---
     f = open(filename, "w", newline="")
     writer = csv.writer(f)
-    writer.writerow(["sample", "timestamp_s", "ADC_Value"])
+    writer.writerow(["sample", "ADC_Value"])
 
     sample_idx = 0
     t0 = time.time()
 
     print("Logging + plotting. Press Ctrl+C to stop.")
-    print("Expecting frames: 0xFF 0xFF MODE D_H D_L Y_H Y_L")
+    print("Expecting frames: 0xFF ADRESH ADRESL")
 
     try:    #FRAMES: 0xFF [adresh][adresL]
         N = 50000
         adc_arr = np.zeros(N)
+        num_collected = 0
         for i in range(N):
             while not ser.read(1)==b'\xff':
                 pass
@@ -68,24 +68,35 @@ def main():
             adc_val = adc_bytes[0] * 256 + adc_bytes[1]
             adc_arr[i] = adc_val
             print(f"{adc_val}")
+            num_collected += 1
             # print(f'{yk}, {dcont}')
             # print(f"{hex(byte[0])}, {byte}")
         print(adc_arr)
         plt.figure()
-        plt.plot(adc_arr)
+        plt.plot(adc_arr, label="ADC Values")
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (12bit)")
+        plt.legend()
         plt.show()
+        ser.close
+
     except KeyboardInterrupt:
         print("\nStopping logging.")
+        
+        print(adc_arr)
         plt.figure()
-        plt.plot(adc_arr)
+        plt.plot(adc_arr, label="ADC Values")
+        plt.xlabel("Sample Index")
+        plt.ylabel("Value (12bit)")
+        plt.legend()
         plt.show()
-        ser.close()
+        ser.close
+        
     finally:
-        for i in range(len(adc_arr)):
-            writer.writerow([i,time.time() - t0, adc_arr[i]])
+        for i in range(num_collected):
+            writer.writerow([i, adc_arr[i]])
         f.close()
         ser.close()
-        plt.ioff()
         plt.show()  # keep final plot on screen
 
 
