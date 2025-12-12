@@ -21,8 +21,8 @@
       <itemPath>README.md</itemPath>
       <itemPath>config.s</itemPath>
       <itemPath>port_read_and_plotting.py</itemPath>
-      <itemPath>FP_LUT.inc</itemPath>
       <itemPath>UART_plant.s</itemPath>
+      <itemPath>FP_LUT.inc</itemPath>
       <itemPath>main_plant.s</itemPath>
       <itemPath>modelplant.s</itemPath>
     </logicalFolder>

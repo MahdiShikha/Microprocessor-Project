@@ -1,17 +1,3 @@
-; FP_LUT.inc
-; FabryPerot transmission lookup table for ONE FSR
-; idx = 0 .. N_TABLE-1  ->  Y = 0..3000 (approx 12-bit)
-
-#include <xc.inc>
-
-
-global  N_TABLE
-N_TABLE     EQU 2048     
-
-psect   FP_LUT_table, class=CODE
-
-global  FP_LUT_TABLE
-
 FP_LUT_TABLE:
         dw 0     ; 0
         dw 0     ; 1
@@ -2060,4 +2046,3 @@ FP_LUT_TABLE:
         dw 0     ; 2044
         dw 0     ; 2045
         dw 0     ; 2046
-

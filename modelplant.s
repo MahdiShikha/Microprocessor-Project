@@ -132,6 +132,8 @@ Init_Model:
 
         ; Drift: update roughly every 50 cycles
         movlw   2
+	
+	
         movwf   DriftDiv, A
         clrf    DriftTick, A
 
