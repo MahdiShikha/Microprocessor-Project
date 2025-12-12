@@ -125,13 +125,13 @@ Init_Model:
         clrf    dH, A
 
         ; drift speed = +1 index per update
-        movlw   0xFF
+        movlw   0x01
         movwf   DriftSpeedL, A
-	movlw   0xFF
+	movlw   0x00
         movwf   DriftSpeedH, A
 
         ; Drift: update roughly every 50 cycles
-        movlw   1
+        movlw   2
         movwf   DriftDiv, A
         clrf    DriftTick, A
 

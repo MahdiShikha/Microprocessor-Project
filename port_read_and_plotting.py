@@ -56,7 +56,7 @@ def main():
     print("Expecting frames: 0xFF Y_H Y_L D_H D_L")
 
     try:
-        N = 10000
+        N = 100000
         ykarr = np.zeros(N)
         dcontarr = np.zeros(N)
         num_collected = 0
@@ -77,9 +77,9 @@ def main():
         plt.xlabel("Sample Index")
         plt.ylabel("Value (12bit)")
         plt.plot(ykarr,label="Yk Value")
-        plt.legend()
-        plt.show()
-        plt.figure()
+        #plt.legend()
+        #plt.show()
+        #plt.figure()
         plt.xlabel("Sample Index")
         plt.ylabel("Value (16bit)")
         plt.plot(dcontarr, label="Dctrl Value")
@@ -93,12 +93,12 @@ def main():
         plt.xlabel("Sample Index")
         plt.ylabel("Value (12bit)")
         plt.plot(ykarr,label="Yk Value")
-        plt.legend()
-        plt.show()
-        plt.figure()
+        #plt.legend()
+        #plt.show()
+        #plt.figure()
         plt.xlabel("Sample Index")
         plt.ylabel("Value (16bit)")
-        plt.plot(dcontarr, label="Dctrl Value")
+        plt.plot(dcontarr/32, label="Dctrl Value")
         plt.legend
         plt.show()
         ser.close
