@@ -1,5 +1,5 @@
 ;========================================================
-;  controller_A.s ? FSM + SCAN + PI LOCK + BODE (locked)
+;  controller.s  FSM + SCAN + PI LOCK + BODE (locked)
 ;========================================================
 
 #include <xc.inc>
@@ -78,8 +78,7 @@ D_baseL:        ds  1
 D_baseH:        ds  1
 
 ; LOCK internal state
-LockState:      ds  1        ; 0=SEARCH, 1=PROBE, 2=MEAS, 3=TRACK
-LockSide:       ds  1        ; 0=LEFT slope (dY/dD>0), 1=RIGHT slope (dY/dD<0)
+LockState:      ds  1        ; 0=SEARCH, 1=TRACK
 Y_lockBaseL:    ds  1        ; Y at base point (low)
 Y_lockBaseH:    ds  1        ; Y at base point (high)
 
@@ -122,14 +121,9 @@ BODE_LUT_LEN    equ 64        ; must match N in SINLUT.inc
 
 SCAN_STEP       equ 16        ; scan step in SCAN mode
      
-; LOCK sub-states
+; LOCK sub-states (simplified)
 LOCK_SEARCH     equ 0         ; sweep D until near Y_target
-LOCK_PROBE      equ 1         ; D = D_base + PROBE_STEP
-LOCK_MEAS       equ 2         ; measure slope sign
-LOCK_TRACK      equ 3         ; normal PI tracking
-
-; probe step in D_ctrl units (small nudge)
-PROBE_STEP      equ 32
+LOCK_TRACK      equ 1         ; PI tracking
 
 ; band around Y_target to "capture" lock point: |Y - Y_target| <= BAND
 LOCK_CATCH_BAND equ 5
@@ -185,7 +179,6 @@ Init_Controller:
         ; LOCK state init
         movlw   LOCK_SEARCH
         movwf   LockState, A
-        clrf    LockSide, A
         clrf    Y_lockBaseL, A
         clrf    Y_lockBaseH, A
 
@@ -359,83 +352,6 @@ CDL_Search_IncD:
 CDL_SearchDone:
         return
 
-;---------------- LOCK_PROBE: D_ctrl = D_base + PROBE_STEP ----------
-CDL_Probe:
-        movff   D_baseL, D_ctrlL
-        movff   D_baseH, D_ctrlH
-
-        ; Clear carry before 16-bit add
-        bcf     STATUS, 0, A
-
-        movlw   low(PROBE_STEP)
-        addwf   D_ctrlL, F, A
-        movlw   high(PROBE_STEP)
-        addwfc  D_ctrlH, F, A
-
-        ; simple saturation to max if overflow
-        btfsc   STATUS, 0, A
-        bra     CDL_ProbeClampHigh
-        bra     CDL_ProbeSetState
-
-CDL_ProbeClampHigh:
-        movlw   DCTRL_MAX_L
-        movwf   D_ctrlL, A
-        movlw   DCTRL_MAX_H
-        movwf   D_ctrlH, A
-
-CDL_ProbeSetState:
-        movlw   LOCK_MEAS
-        movwf   LockState, A
-        return
-
-
-;---------------- LOCK_MEAS: measure slope sign ---------------------
-CDL_Meas:
-        ; *** FIX 2: correct dY = Yk - Y_lockBase (not the inverse) ***
-        ; Compute dY = Yk - Y_lockBase -> TmpH:TmpL (signed)
-        ; low byte: TmpL = YkL - Y_lockBaseL
-        movf    Y_lockBaseL, W, A
-        subwf   YkL, W, A
-        movwf   TmpL, A
-
-        ; high byte with borrow: TmpH = YkH - Y_lockBaseH - borrow
-        movf    Y_lockBaseH, W, A
-        subwfb  YkH, W, A
-        movwf   TmpH, A
-
-        ; check sign bit of dY (TmpH)
-        movf    TmpH, W, A
-        andlw   0x80
-        btfsc   STATUS, 2, A
-        bra     CDL_SlopeLeft    ; sign=0 -> dY>=0 -> LEFT slope (dY/dD > 0)
-
-        ; negative -> RIGHT slope (dY/dD < 0)
-        movlw   1                ; LOCK_SIDE_RIGHT
-        movwf   LockSide, A
-        bra     CDL_SlopeDone
-
-CDL_SlopeLeft:
-        clrf    LockSide, A      ; 0 = LEFT slope
-
-CDL_SlopeDone:
-        ; restore D_ctrl = D_base (remove probe step)
-        movff   D_baseL, D_ctrlL
-        movff   D_baseH, D_ctrlH
-
-        ; enter TRACK
-        movlw   LOCK_TRACK
-        movwf   LockState, A
-        return
-
-
-;---------------- LOCK_TRACK: PI control around D_base ----------------
-; In TRACK:
-;   Err = Y_target - Yk         (signed 16-bit)
-;   Pterm = Kp * Err            (Scale_Err_Kp)
-;   Iinc  = Ki * Err, Int += Iinc
-;   Corr  = Pterm + Int         (signed 16-bit)
-;   D_ctrl = D_base + Corr      (with saturation 0..0xFFFF)
-;--------------------------------------------------------------------
 CDL_Track:
         ; 1) Err = Y_target - Yk  (signed 16-bit)
         movff   Y_targetL, ErrL
@@ -659,7 +575,6 @@ UMB_CheckLock:
         ; ---------- ENTERING LOCK (simplified DC-lock) ----------
         ; - Start LOCK_SEARCH from D_ctrl = 0
         ; - Clear D_base and integral
-        ; - Assume LEFT slope (LockSide=0)
         ; - Set LockState = LOCK_SEARCH
 
         clrf    D_ctrlL, A
@@ -671,7 +586,6 @@ UMB_CheckLock:
         clrf    IntL, A
         clrf    IntH, A
 
-        clrf    LockSide, A      ; 0 = LEFT (we never probe/measure now)
 
         movlw   LOCK_SEARCH
         movwf   LockState, A
