@@ -23,3 +23,4 @@ disassembly/
 *.map
 defmplabxtrace.log
 defmplabxtrace.log.inx
+*.csv
